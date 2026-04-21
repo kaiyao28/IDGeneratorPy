@@ -59,6 +59,94 @@ python idgenerator.py --help
 
 ---
 
+## Typical workflow: one coordinating center, samples from multiple contributing sites
+
+A common scenario is a **single coordinating lab** that assigns IDs for samples arriving from several contributing sites (hospitals, clinics, etc.) over time. New samples can arrive from sites that have already been registered, or from entirely new sites.
+
+In this setup:
+- `--study` and `--center` are fixed for the life of the project — they identify your lab and study
+- The `SampleName` column in the sheet is the **contributing site name** (not your own center)
+- Cases and controls are tracked separately per site via the `G` block
+
+> Note: the `C` building block encodes *your* coordinating center code and stays the same for every ID. The contributing site name goes into the `T` (track) block via `SampleName`.
+
+---
+
+### Wave 1 — first batch of samples arrives
+
+`wave1.xlsx` (or `.csv` / `.txt`):
+
+| SampleName | NCases | NControls |
+|------------|--------|-----------|
+| SiteA      | 50     | 100       |
+| SiteB      | 30     | 60        |
+
+```bash
+python idgenerator.py batch \
+    --study      MyStudy \
+    --center     01 \
+    --input-file wave1.xlsx \
+    --digits     5 \
+    --blocks     CTGNVX \
+    --checksum   Damm_2004 \
+    --case-prefix    S \
+    --control-prefix C \
+    --output ./ids
+```
+
+This creates four files in `./ids/`:
+```
+{ts}_MyStudy_IDP_IDT_T=SiteA_G=S_N=50_Baseline.txt    ← SiteA cases,    personal data
+{ts}_MyStudy_IDS_IDT_T=SiteA_G=S_N=50_Baseline.txt    ← SiteA cases,    study data
+{ts}_MyStudy_IDP_IDT_T=SiteA_G=C_N=100_Baseline.txt   ← SiteA controls, personal data
+{ts}_MyStudy_IDS_IDT_T=SiteA_G=C_N=100_Baseline.txt   ← SiteA controls, study data
+... (same four files for SiteB)
+```
+
+---
+
+### Wave 2 — more samples from existing sites, plus a brand-new site
+
+`wave2.xlsx`:
+
+| SampleName | NCases | NControls |
+|------------|--------|-----------|
+| SiteA      | 20     | 40        |
+| SiteC      | 15     | 30        |
+
+- **SiteA** already has a baseline → will be **extended** (20 new cases, 40 new controls appended; old files renamed `.old`)
+- **SiteC** is new → will be **created fresh**
+
+```bash
+python idgenerator.py batch \
+    --study      MyStudy \
+    --center     01 \
+    --input-file wave2.xlsx \
+    --digits     5 \
+    --blocks     CTGNVX \
+    --checksum   Damm_2004 \
+    --case-prefix    S \
+    --control-prefix C \
+    --extend \
+    --input-dir  ./ids \
+    --output     ./ids
+```
+
+The script auto-detects which sites already exist and handles each row accordingly. No manual bookkeeping needed. Every new random number is guaranteed unique across all previous waves.
+
+---
+
+### What each output file is for
+
+| File | Who uses it | Contains |
+|------|-------------|----------|
+| `IDP_IDT` | Your team (coordinating center) | Personal data identifier + temporary key. Keep confidential. |
+| `IDS_IDT` | Lab / analysts | Study data identifier + temporary key. Share for processing. Row order is randomised. |
+
+Once data collection is complete and linkage is no longer needed, the IDT column can be deleted from the IDS file to make it fully anonymous.
+
+---
+
 ## Commands
 
 ### `baseline` — generate a fresh baseline from named tracks
