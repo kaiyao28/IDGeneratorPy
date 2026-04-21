@@ -102,7 +102,7 @@ CONFIG_FILENAME = "study.cfg"
 
 CONFIG_KEYS = [
     "study", "center", "digits", "blocks", "checksum",
-    "case_prefix", "control_prefix", "output",
+    "case_prefix", "control_prefix", "output", "visit",
 ]
 
 
@@ -135,6 +135,7 @@ def _apply_config(args: argparse.Namespace, cfg: dict) -> None:
         "case_prefix":     "case_prefix",
         "control_prefix":  "control_prefix",
         "output":          "output",
+        "visit":           "visit",
     }
     for arg_attr, cfg_key in mapping.items():
         if cfg_key in cfg and getattr(args, arg_attr, None) in (None, argparse.SUPPRESS):
@@ -987,7 +988,12 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
         _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False
 
+    # Per-site followup files go into followup/ subfolder; ALL in main dir
+    followup_out = out / "followup"
+    followup_out.mkdir(parents=True, exist_ok=True)
+
     ts = timestamp()
+    all_rows = []   # accumulates (IDS, IDSVn, IDS128, IDSVn128, Track, Group)
 
     for bf in baseline_files:
         track_name = get_param_from_filename(str(bf), "T")
@@ -1012,21 +1018,33 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
         for row in rows:
             ids_id = row[0]
             n = int(ids_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0
-            ids_rebuilt = build_id(blocks, center, track_name, n, 1,     checksum_fn, group=group)
-            idsv_new    = build_id(blocks, center, track_name, n, visit,  checksum_fn, group=group)
-            ids_out.append((ids_rebuilt,  format_code128(ids_rebuilt)))
-            idsv_out.append((idsv_new,    format_code128(idsv_new)))
+            ids_rebuilt = build_id(blocks, center, track_name, n, 1,    checksum_fn, group=group)
+            idsv_new    = build_id(blocks, center, track_name, n, visit, checksum_fn, group=group)
+            ids_out.append((ids_rebuilt, format_code128(ids_rebuilt)))
+            idsv_out.append((idsv_new,   format_code128(idsv_new)))
 
         track_n = len(rows)
         g_tag   = f"_G={group}" if group else ""
-        out_file = out / f"{ts}_{study}_IDS_IDSV{visit}_T={track_name}{g_tag}_N={track_n}_V={visit}.txt"
-        _write_tsv(out_file,
+        per_site_file = followup_out / f"{ts}_{study}_IDS_IDSV{visit}_T={track_name}{g_tag}_N={track_n}_V={visit}.txt"
+        _write_tsv(per_site_file,
                    ["IDS", f"IDSV{visit}", "IDS128", f"IDSV{visit}128"],
                    ((ids, idsv, ids128, idsv128)
                     for (ids, ids128), (idsv, idsv128) in zip(ids_out, idsv_out)))
 
+        for (ids, ids128), (idsv, idsv128) in zip(ids_out, idsv_out):
+            all_rows.append((ids, idsv, ids128, idsv128, track_name, group))
+
         label = f"{track_name}/{group}" if group else track_name
-        _log(f"  [{label}] {track_n} follow-ups (V={visit})  →  {out_file.name}")
+        _log(f"  [{label}] {track_n} follow-ups (V={visit})  →  followup/{per_site_file.name}")
+
+    # Retire old followup ALL and write fresh one
+    for old in sorted(out.glob(f"*_{study}_IDS_IDSV{visit}_ALL_*_V={visit}.txt")):
+        old.rename(old.with_suffix(".old"))
+    all_file = out / f"{ts}_{study}_IDS_IDSV{visit}_ALL_N={len(all_rows)}_V={visit}.txt"
+    _write_tsv(all_file,
+               ["IDS", f"IDSV{visit}", "IDS128", f"IDSV{visit}128", "Track", "Group"],
+               all_rows)
+    _log(f"  Master FOLLOWUP_ALL : {all_file.name}")
 
     _log("Done.")
     return True
@@ -1276,6 +1294,8 @@ def main():
     p.add_argument("--checksum", default="Damm_2004", choices=list(CHECKSUMS.keys()))
     p.add_argument("--case-prefix",    default="S")
     p.add_argument("--control-prefix", default="C")
+    p.add_argument("--visit", type=int, default=2,
+                   help="Follow-up visit number to use for all followup runs (default: 2)")
     p.add_argument("--output",   default=".", help="Study output directory")
 
     # ── baseline ─────────────────────────────────────────────────────────────
@@ -1302,8 +1322,8 @@ def main():
     # ── followup ─────────────────────────────────────────────────────────────
     p = sub.add_parser("followup", parents=[shared],
                        help="Generate follow-up visit IDs from existing baseline files")
-    p.add_argument("--visit",     required=True, type=int,
-                   help="Follow-up visit number (e.g. 2)")
+    p.add_argument("--visit", type=int, default=None,
+                   help="Follow-up visit number (default: loaded from study.cfg, fallback 2)")
     p.add_argument("--input-dir", default=None,
                    help="Directory containing baseline IDS_IDT files (default: .)")
 
@@ -1343,7 +1363,7 @@ def main():
 
     # Apply hardcoded defaults for anything still None after config load
     _defaults = dict(center="", digits=5, blocks="CTNVX",
-                     checksum="Damm_2004", case_prefix="S", control_prefix="C")
+                     checksum="Damm_2004", case_prefix="S", control_prefix="C", visit=2)
     for attr, val in _defaults.items():
         if getattr(args, attr, None) is None:
             setattr(args, attr, val)
@@ -1358,6 +1378,7 @@ def main():
             "checksum":        args.checksum,
             "case_prefix":     args.case_prefix,
             "control_prefix":  args.control_prefix,
+            "visit":           args.visit,
             "output":          args.output,
         }
         _save_config(cfg_data, args.output)
