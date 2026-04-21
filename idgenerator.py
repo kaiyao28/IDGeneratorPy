@@ -93,6 +93,30 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGGING  (mirrors original WriteInfo → LogFile.txt behaviour)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_log_path: Path | None = None
+
+
+def _log_init(output_dir: str) -> None:
+    global _log_path
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    _log_path = out / "LogFile.txt"
+
+
+def _log(msg: str = "") -> None:
+    if msg:
+        line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {msg}"
+    else:
+        line = ""
+    print(line)
+    if _log_path:
+        with open(_log_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CHECKSUM ALGORITHMS
@@ -407,10 +431,10 @@ def read_sample_sheet(filepath: str) -> list:
             n_cases = int(float(n_cases))
             n_ctrl  = int(float(n_ctrl))
         except ValueError:
-            print(f"  Warning: skipping row {i} — non-numeric counts: {row}")
+            _log(f"  Warning: skipping row {i} — non-numeric counts: {row}")
             continue
         if n_cases < 0 or n_ctrl < 0:
-            print(f"  Warning: skipping row {i} — negative counts: {row}")
+            _log(f"  Warning: skipping row {i} — negative counts: {row}")
             continue
         result.append((name, n_cases, n_ctrl))
 
@@ -521,14 +545,14 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
         max_possible = 2_147_483_647
 
     if total_n > max_possible:
-        print(f"ERROR: {total_n} IDs requested but maximum for {digits} digits is {max_possible}.")
+        _log(f"ERROR: {total_n} IDs requested but maximum for {digits} digits is {max_possible}.")
         return False
 
     lo_idp, hi_idp, lo_ids, hi_ids, lo_idt, hi_idt = _id_pools(digits)
-    print(f"ID-P pool : {lo_idp} – {hi_idp}")
-    print(f"ID-S pool : {lo_ids} – {hi_ids}")
-    print(f"ID-T pool : {lo_idt} – {hi_idt}")
-    print(f"Generating {total_n} IDs across {len(tracks)} track(s)…")
+    _log(f"ID-P pool : {lo_idp} – {hi_idp}")
+    _log(f"ID-S pool : {lo_ids} – {hi_ids}")
+    _log(f"ID-T pool : {lo_idt} – {hi_idt}")
+    _log(f"Generating {total_n} IDs across {len(tracks)} track(s)…")
 
     idp_nums = _unique_randoms(lo_idp, hi_idp, total_n, set())
     ids_nums = _unique_randoms(lo_ids, hi_ids, total_n, set())
@@ -546,12 +570,12 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
             blocks, checksum_fn, out, ts,
             shuffle=shuffle,
         )
-        print(f"  [{track_name}] {track_n} IDs  →  {idp_file.name}")
+        _log(f"  [{track_name}] {track_n} IDs  →  {idp_file.name}")
         if ids_file:
-            print(f"                         {ids_file.name}")
+            _log(f"                         {ids_file.name}")
         pos += track_n
 
-    print("Done.")
+    _log("Done.")
     return True
 
 
@@ -559,29 +583,32 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
 # BATCH BASELINE  (sample sheet with cases + controls)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _read_existing_nums(ids_file: Path, idp_file: Path, blocks: str,
+def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
                         center: str, track_name: str, group: str, digits: int):
     """
-    Read the numeric N-field values from an existing IDS_IDT / IDP_IDT baseline pair.
+    Read the numeric N-field values from an existing IDP_IDT baseline file.
+    ids_file may be None when the original run did not use --shuffle.
     Returns (idp_nums, ids_nums_matched, idt_nums, existing_count).
-    IDS numbers are cross-referenced via IDT so they align positionally with IDP.
+    IDS numbers are cross-referenced via IDT when the IDS file is present;
+    otherwise an empty list is returned (those numbers were never written out).
     """
     len_c = len(center)
     len_t = len(track_name)
     len_g = len(group)
     pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
 
-    # IDS file: build idt_num → ids_num lookup
+    # IDS file: build idt_num → ids_num lookup (only if the file exists)
     idt_to_ids = {}
-    with open(ids_file, encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
-        next(reader)
-        for row in reader:
-            if not row:
-                continue
-            ids_n = int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0
-            idt_n = int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0
-            idt_to_ids[idt_n] = ids_n
+    if ids_file is not None:
+        with open(ids_file, encoding="utf-8") as f:
+            reader = csv.reader(f, delimiter="\t")
+            next(reader)
+            for row in reader:
+                if not row:
+                    continue
+                ids_n = int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+                idt_n = int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+                idt_to_ids[idt_n] = ids_n
 
     # IDP file: ordered list of (idp_num, idt_num)
     idp_nums, idt_nums = [], []
@@ -595,13 +622,14 @@ def _read_existing_nums(ids_file: Path, idp_file: Path, blocks: str,
             idt_nums.append(int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0)
 
     ids_nums_matched = []
-    for idt_n in idt_nums:
-        if idt_n not in idt_to_ids:
-            raise ValueError(
-                f"IDT value {idt_n} found in IDP file but not in IDS file. "
-                "Ensure both files are from the same baseline run."
-            )
-        ids_nums_matched.append(idt_to_ids[idt_n])
+    if idt_to_ids:
+        for idt_n in idt_nums:
+            if idt_n not in idt_to_ids:
+                raise ValueError(
+                    f"IDT value {idt_n} found in IDP file but not in IDS file. "
+                    "Ensure both files are from the same baseline run."
+                )
+            ids_nums_matched.append(idt_to_ids[idt_n])
 
     return idp_nums, ids_nums_matched, idt_nums, len(idp_nums)
 
@@ -609,19 +637,20 @@ def _read_existing_nums(ids_file: Path, idp_file: Path, blocks: str,
 def _find_baseline_pair(study: str, sample_name: str, group: str,
                         search_dir: Path):
     """
-    Return (ids_file, idp_file) for an existing baseline, or (None, None) if not found.
+    Return (ids_file_or_None, idp_file) for an existing baseline, or (None, None) if not found.
+    IDP_IDT is always present; IDS_IDT only exists when --shuffle was used originally.
     Matches the most recent file when multiple timestamps exist.
     """
     g_tag = f"_G={group}" if group else ""
-    ids_matches = sorted(search_dir.glob(
-        f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
-    ))
     idp_matches = sorted(search_dir.glob(
         f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
     ))
-    if ids_matches and idp_matches:
-        return ids_matches[-1], idp_matches[-1]
-    return None, None
+    if not idp_matches:
+        return None, None
+    ids_matches = sorted(search_dir.glob(
+        f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
+    ))
+    return (ids_matches[-1] if ids_matches else None), idp_matches[-1]
 
 
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
@@ -651,15 +680,15 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     out.mkdir(parents=True, exist_ok=True)
     inp = Path(input_dir) if input_dir else out
 
-    print(f"Reading sample sheet: {input_file}")
+    _log(f"Reading sample sheet: {input_file}")
     try:
         samples = read_sample_sheet(input_file)
     except (ValueError, ImportError) as e:
-        print(f"ERROR: {e}")
+        _log(f"ERROR: {e}")
         return False
 
     if not samples:
-        print("ERROR: No valid samples found in input file.")
+        _log("ERROR: No valid samples found in input file.")
         return False
 
     lo_idp, hi_idp, lo_ids, hi_ids, lo_idt, hi_idt = _id_pools(digits)
@@ -688,14 +717,14 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             if extend_mode:
                 ids_f, idp_f = _find_baseline_pair(study, sample_name,
                                                     group_prefix, inp)
-                if ids_f and idp_f:
+                if idp_f:
                     try:
                         ex_idp, ex_ids, ex_idt, ex_n = _read_existing_nums(
                             ids_f, idp_f, blocks, center,
                             sample_name, group_prefix, digits,
                         )
                     except ValueError as e:
-                        print(f"ERROR: {e}")
+                        _log(f"ERROR: {e}")
                         return False
                     entry.update(mode="extend",
                                  existing_n=ex_n,
@@ -717,25 +746,25 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     if digits == 10:
         max_possible = 2_147_483_647
     if total_new > max_possible:
-        print(f"ERROR: {total_new} new IDs requested but max for {digits} digits is {max_possible}.")
+        _log(f"ERROR: {total_new} new IDs requested but max for {digits} digits is {max_possible}.")
         return False
 
     # ── Print plan ────────────────────────────────────────────────────────────
     mode_label = "extend" if extend_mode else "new (all fresh)"
-    print(f"\nMode: {mode_label}")
-    print(f"\n{'Sample':<20} {'Group':>6} {'Action':<8} {'Add':>6} {'Existing':>9}")
-    print("-" * 55)
+    _log(f"\nMode: {mode_label}")
+    _log(f"\n{'Sample':<20} {'Group':>6} {'Action':<8} {'Add':>6} {'Existing':>9}")
+    _log("-" * 55)
     for e in plan:
         existing_str = str(e.get("existing_n", "—")).rjust(9)
-        print(f"  {e['sample_name']:<18} {e['group_prefix']:>6} "
+        _log(f"  {e['sample_name']:<18} {e['group_prefix']:>6} "
               f"{e['mode']:<8} {e['add_n']:>6} {existing_str}")
-    print("-" * 55)
-    print(f"  New IDs to generate: {total_new}")
-    print()
-    print(f"ID-P pool : {lo_idp} – {hi_idp}")
-    print(f"ID-S pool : {lo_ids} – {hi_ids}")
-    print(f"ID-T pool : {lo_idt} – {hi_idt}")
-    print(f"Case prefix: '{case_prefix}'   Control prefix: '{control_prefix}'\n")
+    _log("-" * 55)
+    _log(f"  New IDs to generate: {total_new}")
+    _log()
+    _log(f"ID-P pool : {lo_idp} – {hi_idp}")
+    _log(f"ID-S pool : {lo_ids} – {hi_ids}")
+    _log(f"ID-T pool : {lo_idt} – {hi_idt}")
+    _log(f"Case prefix: '{case_prefix}'   Control prefix: '{control_prefix}'\n")
 
     # ── Draw all NEW random numbers globally once ─────────────────────────────
     # used_* already contains all existing numbers, so new draws cannot collide.
@@ -764,7 +793,8 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             all_idt = e["ex_idt"] + new_idt
             total_n = e["existing_n"] + add_n
             # Rename old files before writing new ones
-            e["old_ids_file"].rename(e["old_ids_file"].with_suffix(".old"))
+            if e["old_ids_file"]:
+                e["old_ids_file"].rename(e["old_ids_file"].with_suffix(".old"))
             e["old_idp_file"].rename(e["old_idp_file"].with_suffix(".old"))
             action_str = f"extended {e['existing_n']} → {total_n}"
         else:
@@ -778,14 +808,14 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             blocks, checksum_fn, out, ts,
             shuffle=shuffle,
         )
-        print(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
-        print(f"    IDP→IDT : {idp_file.name}")
+        _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
+        _log(f"    IDP→IDT : {idp_file.name}")
         if ids_file:
-            print(f"    IDS→IDT : {ids_file.name}")
+            _log(f"    IDS→IDT : {ids_file.name}")
         if mode == "extend":
-            print(f"    (old files renamed to .old)")
+            _log(f"    (old files renamed to .old)")
 
-    print("\nDone.")
+    _log("\nDone.")
     return True
 
 
@@ -805,7 +835,7 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
 
     baseline_files = sorted(inp.glob(f"*{study}_IDS_IDT_*_Baseline.txt"))
     if not baseline_files:
-        print(f"ERROR: No baseline files found for study '{study}' in {inp}")
+        _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False
 
     ts = timestamp()
@@ -818,7 +848,7 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
             reader = csv.reader(f, delimiter="\t")
             header = next(reader)
             if header != ["IDS", "IDS128", "IDT"]:
-                print(f"ERROR: Unexpected header in {bf.name}: {header}")
+                _log(f"ERROR: Unexpected header in {bf.name}: {header}")
                 return False
             rows = [r for r in reader if r]
 
@@ -847,9 +877,9 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
                     for (ids, ids128), (idsv, idsv128) in zip(ids_out, idsv_out)))
 
         label = f"{track_name}/{group}" if group else track_name
-        print(f"  [{label}] {track_n} follow-ups (V={visit})  →  {out_file.name}")
+        _log(f"  [{label}] {track_n} follow-ups (V={visit})  →  {out_file.name}")
 
-    print("Done.")
+    _log("Done.")
     return True
 
 
@@ -869,7 +899,7 @@ def add_track(study, track_name, output_dir, shuffle=False):
     for kind, header in kinds:
         f = out / f"{ts}_{study}_{kind}_T={track_name}_N=0_Baseline.txt"
         _write_tsv(f, header, [])
-        print(f"  Created {f.name}")
+        _log(f"  Created {f.name}")
 
     return True
 
@@ -901,19 +931,19 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         idp_files = sorted(inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_Baseline.txt"))
 
         if not ids_files:
-            print(f"ERROR: IDS baseline for track '{track_name}' not found in {inp}")
+            _log(f"ERROR: IDS baseline for track '{track_name}' not found in {inp}")
             return False
         if not idp_files:
-            print(f"ERROR: IDP baseline for track '{track_name}' not found in {inp}")
+            _log(f"ERROR: IDP baseline for track '{track_name}' not found in {inp}")
             return False
 
         actual_ids = count_data_lines(str(ids_files[0]))
         actual_idp = count_data_lines(str(idp_files[0]))
         if actual_ids != existing_n:
-            print(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
+            _log(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
             return False
         if actual_idp != existing_n:
-            print(f"ERROR: IDP file has {actual_idp} records, declared {existing_n}")
+            _log(f"ERROR: IDP file has {actual_idp} records, declared {existing_n}")
             return False
 
         group  = get_param_from_filename(str(ids_files[0]), "G")
@@ -949,7 +979,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         ids_nums_matched = []
         for idt_n in idt_nums_existing:
             if idt_n not in idt_to_ids_num:
-                print(f"ERROR: IDT {idt_n} in IDP file has no match in IDS file.")
+                _log(f"ERROR: IDT {idt_n} in IDP file has no match in IDS file.")
                 return False
             ids_nums_matched.append(idt_to_ids_num[idt_n])
 
@@ -971,12 +1001,12 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
 
         ids_files[0].rename(ids_files[0].with_suffix(".old"))
         idp_files[0].rename(idp_files[0].with_suffix(".old"))
-        print(f"  [{track_name}] extended {existing_n} → {total_n}")
-        print(f"    IDP→IDT : {idp_file.name}")
-        print(f"    IDS→IDT : {ids_file.name}")
-        print(f"    (old files renamed to .old)")
+        _log(f"  [{track_name}] extended {existing_n} → {total_n}")
+        _log(f"    IDP→IDT : {idp_file.name}")
+        _log(f"    IDS→IDT : {ids_file.name}")
+        _log(f"    (old files renamed to .old)")
 
-    print("Done.")
+    _log("Done.")
     return True
 
 
@@ -1002,7 +1032,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
 
     baseline_files = sorted(inp.glob(f"*{study}_IDS_IDT_*_Baseline.txt"))
     if not baseline_files:
-        print(f"ERROR: No baseline files found for study '{study}' in {inp}")
+        _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False
 
     ts = timestamp()
@@ -1015,7 +1045,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
             reader = csv.reader(f, delimiter="\t")
             header = next(reader)
             if header != ["IDS", "IDS128", "IDT"]:
-                print(f"ERROR: Unexpected header in {bf.name}: {header}")
+                _log(f"ERROR: Unexpected header in {bf.name}: {header}")
                 return False
             rows = [r for r in reader if r]
 
@@ -1034,9 +1064,9 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
                    zip(ids_ids, ide_ids, ids128, ide128))
 
         label = f"{track_name}/{group}" if group else track_name
-        print(f"  [{label}] {track_n} external IDs  →  {out_file.name}")
+        _log(f"  [{label}] {track_n} external IDs  →  {out_file.name}")
 
-    print("Done.")
+    _log("Done.")
     return True
 
 
@@ -1139,6 +1169,13 @@ def main():
     p.add_argument("--input-dir", default=".")
 
     args = parser.parse_args()
+
+    out_dir = getattr(args, "output", ".")
+    _log_init(out_dir)
+    _log(f"{'='*60}")
+    _log(f"Command  : {args.command}")
+    _log(f"Arguments: {' '.join(sys.argv[1:])}")
+    _log(f"{'='*60}")
 
     if args.command == "baseline":
         ok = generate_baseline(args.study, args.center, _parse_tracks(args.tracks),
