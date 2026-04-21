@@ -105,7 +105,7 @@ All study parameters are loaded automatically from `./ids/study.cfg`. A single c
 {ts}_MyStudy_IDP_IDT_ALL_N=180_Baseline.txt    ← all sites, personal data + temp keys
 ```
 
-To also generate the row-shuffled study-data file (IDS_IDT), add `--shuffle`. To additionally write one file per site/group, add `--separate`.
+Two combined files are always written to the main directory: `IDP_IDT_ALL` (personal data) and `IDS_IDT_ALL` (study data). Individual per-site files are always written to `per_site/`. Add `--shuffle` to also write per-site IDS files (with shuffled row order) into `per_site/`.
 
 ---
 
@@ -135,10 +135,10 @@ By default each `batch` run produces **one combined file** containing all sites 
 
 | File | Location | Who uses it | Contains |
 |------|----------|-------------|----------|
-| `IDP_IDT_ALL` | `output/` | Your team (coordinating center) | All personal data identifiers + temporary keys for this run, with Track and Group columns. Keep confidential. |
-| `IDS_IDT_ALL` | `output/` | Lab / analysts | All study data identifiers + temporary keys, row order shuffled. Written only with `--shuffle`. |
-| `IDP_IDT_T=…` | `output/per_site/` | Your team | Same content, one file per site/group. Written only with `--separate`. |
-| `IDS_IDT_T=…` | `output/per_site/` | Lab / analysts | Per-site IDS file. Written only with `--shuffle --separate`. |
+| `IDP_IDT_ALL` | `output/` | Your team (coordinating center) | All personal data identifiers + temporary keys for this run, with Track and Group columns. Keep confidential. **Always written.** |
+| `IDS_IDT_ALL` | `output/` | Lab / analysts | All study data identifiers + temporary keys, with Track and Group columns. **Always written.** |
+| `IDP_IDT_T=…` | `output/per_site/` | Your team | Per-site/group IDP file. Always written here; `.old` archive kept when a site is extended. |
+| `IDS_IDT_T=…` | `output/per_site/` | Lab / analysts | Per-site IDS file with shuffled row order. Written only with `--shuffle`. |
 
 Once data collection is complete and linkage is no longer needed, the IDT column can be deleted from the IDS file to make it fully anonymous.
 
@@ -182,8 +182,8 @@ python idgenerator.py batch --input-file test_full/samples.csv --seed 42 --outpu
 # Wave 2 — script auto-detects SiteA exists → extends; SiteC is new → creates
 python idgenerator.py batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
 
-# Wave 3 — new site; --shuffle produces IDS file; --separate writes per-site files into test_full/ids/per_site/
-python idgenerator.py batch --input-file test_full/wave3.csv --shuffle --separate --seed 44 --output test_full/ids
+# Wave 3 — new site; --shuffle also writes per-site IDS file into per_site/
+python idgenerator.py batch --input-file test_full/wave3.csv --shuffle --seed 44 --output test_full/ids
 
 # Follow-up visit 2 — no --input-dir needed, defaults to --output
 python idgenerator.py followup --visit 2 --output test_full/ids
@@ -271,12 +271,16 @@ The `G` block in `--blocks CTGNVX` embeds the case/control prefix directly in ev
 
 Random numbers are drawn from a **global pool** across all samples and groups, so every ID in the entire run is guaranteed unique.
 
-**Output files** (one pair per sample × group):
+**Output structure:**
 ```
-{ts}_{study}_IDP_IDT_T={sample}_G=S_N={n}_Baseline.txt   ← cases,    unshuffled
-{ts}_{study}_IDS_IDT_T={sample}_G=S_N={n}_Baseline.txt   ← cases,    row-shuffled
-{ts}_{study}_IDP_IDT_T={sample}_G=C_N={n}_Baseline.txt   ← controls, unshuffled
-{ts}_{study}_IDS_IDT_T={sample}_G=C_N={n}_Baseline.txt   ← controls, row-shuffled
+output/
+  {ts}_{study}_IDP_IDT_ALL_N={total}_Baseline.txt   ← all sites/groups merged (always)
+  {ts}_{study}_IDS_IDT_ALL_N={total}_Baseline.txt   ← all study IDs merged   (always)
+  per_site/
+    {ts}_{study}_IDP_IDT_T={s}_G=S_N={n}_Baseline.txt   ← per-site IDP (always)
+    {ts}_{study}_IDP_IDT_T={s}_G=C_N={n}_Baseline.txt
+    {ts}_{study}_IDS_IDT_T={s}_G=S_N={n}_Baseline.txt   ← per-site IDS (with --shuffle only)
+    {ts}_{study}_IDS_IDT_T={s}_G=C_N={n}_Baseline.txt
 ```
 
 ---

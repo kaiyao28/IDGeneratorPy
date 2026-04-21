@@ -545,19 +545,18 @@ def _read_excel(path: Path, ext: str) -> list:
 def _build_ids_for_track(blocks, center, track_name, group, idp_nums, ids_nums, idt_nums,
                           checksum_fn, *, shuffle=False):
     """
-    Build ID strings for one track/group. Returns (idp_ids, ids_ids, idt_ids, idp128, ids128, order).
-    ids_ids / ids128 / order are only populated when shuffle=True.
+    Build ID strings for one track/group.
+    Returns (idp_ids, ids_ids, idt_ids, idp128, ids128, order).
+    IDS IDs are always built; order is shuffled only when shuffle=True.
     """
     idp_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, group=group) for n in idp_nums]
     idt_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, group=group) for n in idt_nums]
     idp128  = [format_code128(x) for x in idp_ids]
+    ids_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, group=group) for n in ids_nums]
+    ids128  = [format_code128(x) for x in ids_ids]
+    order   = list(range(len(idp_ids)))
     if shuffle:
-        ids_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, group=group) for n in ids_nums]
-        ids128  = [format_code128(x) for x in ids_ids]
-        order   = list(range(len(idp_ids)))
         random.shuffle(order)
-    else:
-        ids_ids = ids128 = order = []
     return idp_ids, ids_ids, idt_ids, idp128, ids128, order
 
 
@@ -567,7 +566,9 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
     """
     Build and write per-track output files.
     Returns (idp_filepath, ids_filepath_or_None, idp_rows, ids_rows).
-    idp_rows / ids_rows are lists of (id, id128, idt, track, group) for combined-file accumulation.
+    idp_rows / ids_rows are lists of (id, id128, idt, track, group) for ALL-file accumulation.
+    IDS rows are always returned. Per-site IDS file (with shuffled rows) is only written
+    when shuffle=True.
     """
     idp_ids, ids_ids, idt_ids, idp128, ids128, order = _build_ids_for_track(
         blocks, center, track_name, group, idp_nums, ids_nums, idt_nums,
@@ -580,13 +581,15 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
     idp_rows = list(zip(idp_ids, idp128, idt_ids,
                         [track_name] * track_n, [group] * track_n))
 
+    # IDS rows always returned (for ALL file); per-site IDS file only written with --shuffle
+    ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
+
     if not shuffle:
-        return idp_file, None, idp_rows, []
+        return idp_file, None, idp_rows, ids_rows
 
     ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_Baseline.txt"
     _write_tsv(ids_file, ["IDS", "IDS128", "IDT"],
                ((ids_ids[i], ids128[i], idt_ids[i]) for i in order))
-    ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
 
     return idp_file, ids_file, idp_rows, ids_rows
 
@@ -715,41 +718,46 @@ def _find_baseline_pair(study: str, sample_name: str, group: str,
     """
     Return (ids_file_or_None, idp_file) for an existing baseline, or (None, None) if not found.
     IDP_IDT is always present; IDS_IDT only exists when --shuffle was used originally.
+    Searches both search_dir and search_dir/per_site/ (where batch always writes individual files).
     Matches the most recent file when multiple timestamps exist.
     """
     g_tag = f"_G={group}" if group else ""
-    idp_matches = sorted(search_dir.glob(
-        f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
-    ))
+    candidate_dirs = [search_dir, search_dir / "per_site"]
+    idp_matches, ids_matches = [], []
+    for d in candidate_dirs:
+        if d.exists():
+            idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_Baseline.txt"))
+            ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"))
+    idp_matches.sort()
+    ids_matches.sort()
     if not idp_matches:
         return None, None
-    ids_matches = sorted(search_dir.glob(
-        f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
-    ))
     return (ids_matches[-1] if ids_matches else None), idp_matches[-1]
 
 
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
                    case_prefix, control_prefix, output_dir,
-                   extend_mode=False, input_dir=None, shuffle=False, separate=False):
+                   extend_mode=False, input_dir=None, shuffle=False):
     """
     Read a sample sheet and generate one baseline per sample×group.
 
-    Default mode (extend_mode=False)
-    ---------------------------------
-    Every sample in the sheet is treated as brand new.
-    Counts = total subjects to generate.
+    Output layout
+    -------------
+    output_dir/                    ← main directory (logs + config + combined files only)
+      IDP_IDT_ALL_*.txt            ← all sites/groups merged, with Track and Group columns
+      IDS_IDT_ALL_*.txt            ← same for study data (row order shuffled across all sites)
+      LogFile.txt
+      study.cfg
+    output_dir/per_site/           ← one file per site×group (always written here)
+      IDP_IDT_T=…_G=…_*.txt
+      IDS_IDT_T=…_G=…_*.txt       ← only when --shuffle is used
 
-    Extend mode (extend_mode=True, --extend flag)
+    Extend mode (default — auto-detected per row)
     ----------------------------------------------
-    Counts = ADDITIONAL subjects to add on top of any existing baseline.
-    - If a baseline already exists for that sample+group in input_dir:
-        existing IDs are preserved, new ones are appended, old files renamed to .old.
-    - If no baseline exists for that sample+group:
-        new files are created from scratch (same as default mode).
-
-    In both modes random numbers are drawn globally, guaranteeing uniqueness across
-    every sample, group, and existing baseline in the same run.
+    If an existing baseline is found in per_site/ for a sample+group, those IDs are
+    preserved and new IDs are appended (old file renamed to .old).
+    If no existing baseline is found, a fresh file is created.
+    Use --fresh to force all rows to be treated as new regardless.
     """
     checksum_fn = CHECKSUMS[checksum_name]
     out = Path(output_dir)
@@ -844,18 +852,22 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
     # ── Draw all NEW random numbers globally once ─────────────────────────────
     # used_* already contains all existing numbers, so new draws cannot collide.
+    # IDS pool may need extra draws for extend entries whose original run had no --shuffle
+    # (ex_ids was empty, so those existing records never had IDS IDs assigned).
+    ids_backfill = sum(e.get("existing_n", 0) for e in plan
+                       if e["mode"] == "extend" and not e.get("ex_ids"))
     new_idp_pool = _unique_randoms(lo_idp, hi_idp, total_new, used_idp)
-    new_ids_pool = _unique_randoms(lo_ids, hi_ids, total_new, used_ids)
+    new_ids_pool = _unique_randoms(lo_ids, hi_ids, total_new + ids_backfill, used_ids)
     new_idt_pool = _unique_randoms(lo_idt, hi_idt, total_new, used_idt)
+    ids_backfill_pos = total_new  # backfill draws start after the regular new-IDs slice
 
     ts = timestamp()
     pos = 0
     all_idp_rows, all_ids_rows = [], []
 
-    # Per-site files go into a dedicated subfolder when --separate is used
-    sep_out = out / "per_site" if separate else None
-    if sep_out:
-        sep_out.mkdir(parents=True, exist_ok=True)
+    # Individual per-site files always written to per_site/ subfolder
+    per_site_out = out / "per_site"
+    per_site_out.mkdir(parents=True, exist_ok=True)
 
     for e in plan:
         sample_name  = e["sample_name"]
@@ -870,53 +882,48 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
         pos += add_n
 
         if mode == "extend":
+            existing_n = e["existing_n"]
+            ex_ids = e["ex_ids"]
+            if not ex_ids:
+                # Original run had no --shuffle; backfill IDS IDs for existing records now
+                bf_ids = new_ids_pool[ids_backfill_pos:ids_backfill_pos + existing_n]
+                ids_backfill_pos += existing_n
+                all_ids = bf_ids + new_ids
+            else:
+                all_ids = ex_ids + new_ids
             all_idp = e["ex_idp"] + new_idp
-            all_ids = e["ex_ids"] + new_ids
             all_idt = e["ex_idt"] + new_idt
-            total_n = e["existing_n"] + add_n
+            total_n = existing_n + add_n
             if e["old_ids_file"]:
                 e["old_ids_file"].rename(e["old_ids_file"].with_suffix(".old"))
             e["old_idp_file"].rename(e["old_idp_file"].with_suffix(".old"))
-            action_str = f"extended {e['existing_n']} → {total_n}"
+            action_str = f"extended {existing_n} → {total_n}"
         else:
             all_idp, all_ids, all_idt = new_idp, new_ids, new_idt
             total_n = add_n
             action_str = f"{add_n} new"
         e["total_n"] = total_n
 
-        if separate:
-            idp_file, ids_file, idp_rows, ids_rows = _write_baseline_for_track(
-                study, center, sample_name, group_prefix,
-                total_n, all_idp, all_ids, all_idt,
-                blocks, checksum_fn, sep_out, ts,
-                shuffle=shuffle,
-            )
-            _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
-            _log(f"    IDP→IDT : per_site/{idp_file.name}")
-            if ids_file:
-                _log(f"    IDS→IDT : per_site/{ids_file.name}")
-        else:
-            _, _, idp_rows, ids_rows = _write_baseline_for_track(
-                study, center, sample_name, group_prefix,
-                total_n, all_idp, all_ids, all_idt,
-                blocks, checksum_fn, out, ts,
-                shuffle=shuffle,
-            )
-            _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
-
+        idp_file, ids_file, idp_rows, ids_rows = _write_baseline_for_track(
+            study, center, sample_name, group_prefix,
+            total_n, all_idp, all_ids, all_idt,
+            blocks, checksum_fn, per_site_out, ts,
+            shuffle=shuffle,
+        )
+        _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
         if mode == "extend":
             _log(f"    (old files renamed to .old)")
 
         all_idp_rows.extend(idp_rows)
         all_ids_rows.extend(ids_rows)
 
-    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={sum(e['total_n'] for e in plan)}_Baseline.txt"
+    total_all_n = sum(e["total_n"] for e in plan)
+    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_all_n}_Baseline.txt"
     _write_tsv(combined_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
-    _log(f"  Combined IDP : {combined_idp.name}")
-    if all_ids_rows:
-        combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={sum(e['total_n'] for e in plan)}_Baseline.txt"
-        _write_tsv(combined_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
-        _log(f"  Combined IDS : {combined_ids.name}")
+    _log(f"  Combined IDP_ALL : {combined_idp.name}")
+    combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_all_n}_Baseline.txt"
+    _write_tsv(combined_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
+    _log(f"  Combined IDS_ALL : {combined_ids.name}")
 
     _log("\nDone.")
     return True
@@ -1256,8 +1263,6 @@ def main():
                    help="Single-letter prefix for control IDs (loaded from study.cfg if omitted)")
     p.add_argument("--fresh", action="store_true",
                    help="Force all rows to be created new, ignoring any existing baselines.")
-    p.add_argument("--separate", action="store_true",
-                   help="Also write one file per site/group in addition to the combined ALL file.")
     p.add_argument("--input-dir", default=None,
                    help="Where to look for existing baseline files. Defaults to --output.")
 
@@ -1354,8 +1359,7 @@ def main():
                             args.case_prefix, args.control_prefix, args.output,
                             extend_mode=not args.fresh,
                             input_dir=args.input_dir or args.output,
-                            shuffle=args.shuffle,
-                            separate=args.separate)
+                            shuffle=args.shuffle)
 
     elif args.command == "followup":
         ok = generate_followups(args.study, args.center,
