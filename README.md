@@ -72,6 +72,20 @@ In this setup:
 
 ---
 
+### One-time setup — save study parameters
+
+Run `init` once at the start of the project. It writes a `study.cfg` file that every subsequent command will load automatically, so you never have to repeat `--study`, `--center`, `--digits`, etc.
+
+```bash
+python idgenerator.py init \
+    --study MyStudy --center 01 \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --case-prefix S --control-prefix C \
+    --output ./ids
+```
+
+---
+
 ### Wave 1 — first batch of samples arrives
 
 `wave1.xlsx` (or `.csv` / `.txt`):
@@ -82,30 +96,16 @@ In this setup:
 | SiteB      | 30     | 60        |
 
 ```bash
-python idgenerator.py batch \
-    --study      MyStudy \
-    --center     01 \
-    --input-file wave1.xlsx \
-    --digits     5 \
-    --blocks     CTGNVX \
-    --checksum   Damm_2004 \
-    --case-prefix    S \
-    --control-prefix C \
-    --output ./ids
+python idgenerator.py batch --input-file wave1.xlsx --output ./ids
 ```
 
-This creates two files per site in `./ids/` (one IDP_IDT file per case/control group):
+All study parameters are loaded automatically from `./ids/study.cfg`. A single combined file is produced:
+
 ```
-{ts}_MyStudy_IDP_IDT_T=SiteA_G=S_N=50_Baseline.txt    ← SiteA cases,    personal data
-{ts}_MyStudy_IDP_IDT_T=SiteA_G=C_N=100_Baseline.txt   ← SiteA controls, personal data
-... (same two files for SiteB)
+{ts}_MyStudy_IDP_IDT_ALL_N=180_Baseline.txt    ← all sites, personal data + temp keys
 ```
 
-To also generate the row-shuffled study-data file (IDS_IDT), add `--shuffle`:
-```bash
-python idgenerator.py batch ... --shuffle
-```
-With `--shuffle`, four files are produced per site instead of two.
+To also generate the row-shuffled study-data file (IDS_IDT), add `--shuffle`. To additionally write one file per site/group, add `--separate`.
 
 ---
 
@@ -118,25 +118,14 @@ With `--shuffle`, four files are produced per site instead of two.
 | SiteA      | 20     | 40        |
 | SiteC      | 15     | 30        |
 
-- **SiteA** already has a baseline → will be **extended** (20 new cases, 40 new controls appended; old files renamed `.old`)
-- **SiteC** is new → will be **created fresh**
+- **SiteA** already has a baseline → will be **extended** automatically (new IDs appended; old files renamed `.old`)
+- **SiteC** is new → will be **created fresh** automatically
 
 ```bash
-python idgenerator.py batch \
-    --study      MyStudy \
-    --center     01 \
-    --input-file wave2.xlsx \
-    --digits     5 \
-    --blocks     CTGNVX \
-    --checksum   Damm_2004 \
-    --case-prefix    S \
-    --control-prefix C \
-    --extend \
-    --input-dir  ./ids \
-    --output     ./ids
+python idgenerator.py batch --input-file wave2.xlsx --output ./ids
 ```
 
-The script auto-detects which sites already exist and handles each row accordingly. No manual bookkeeping needed. Every new random number is guaranteed unique across all previous waves.
+The script checks `./ids/` for each site's existing baseline and auto-detects extend vs new — no `--extend` flag needed. To force all rows to be treated as new regardless, use `--fresh`. Every new random number is guaranteed unique across all previous waves.
 
 ---
 
@@ -180,37 +169,51 @@ The `test_full/` directory in this repository contains ready-to-run input sheets
 **Run all steps in order:**
 
 ```bash
-# Wave 1 — fresh baseline, seeded for reproducibility
-python idgenerator.py batch --study TestStudy --center 01 \
-    --input-file test_full/samples.csv \
-    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C --seed 42 --output test_full/ids
-
-# Wave 2 — extend SiteA, create SiteC fresh
-python idgenerator.py batch --study TestStudy --center 01 \
-    --input-file test_full/wave2.csv \
+# Once only — save study parameters to study.cfg
+python idgenerator.py init \
+    --study TestStudy --center 01 \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
     --case-prefix S --control-prefix C \
-    --extend --input-dir test_full/ids --seed 43 --output test_full/ids
+    --output test_full/ids
 
-# Wave 3 — new site with shuffled IDS file; --separate also writes per-site files
-python idgenerator.py batch --study TestStudy --center 01 \
-    --input-file test_full/wave3.csv \
-    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C \
-    --shuffle --separate --seed 44 --output test_full/ids
+# Wave 1 — study/center/blocks etc loaded automatically from study.cfg
+python idgenerator.py batch --input-file test_full/samples.csv --seed 42 --output test_full/ids
 
-# Follow-up visit 2 for SiteD (which has per-site IDS files from --shuffle above)
-python idgenerator.py followup --study TestStudy --center 01 \
-    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --visit 2 --input-dir test_full/ids --output test_full/ids
+# Wave 2 — script auto-detects SiteA exists → extends; SiteC is new → creates
+python idgenerator.py batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
+
+# Wave 3 — new site; --shuffle produces IDS file; --separate also writes per-site files
+python idgenerator.py batch --input-file test_full/wave3.csv --shuffle --separate --seed 44 --output test_full/ids
+
+# Follow-up visit 2 — no --input-dir needed, defaults to --output
+python idgenerator.py followup --visit 2 --output test_full/ids
 ```
 
-Each wave produces a `_ALL_` combined file. After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail including the seed. Extended files are renamed `.old`.
+Each wave produces a single `_ALL_` combined file. The script auto-detects whether each site already has a baseline and extends or creates accordingly — no `--extend` flag needed. After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail including the config file path and seed.
 
 ---
 
 ## Commands
+
+### `init` — save study parameters once
+
+Run once per project to write `study.cfg` to the output directory. All subsequent commands load it automatically, so you only need `--output` (and any per-run flags like `--input-file` or `--seed`).
+
+```bash
+python idgenerator.py init \
+    --study MyStudy \
+    --center 01 \
+    --digits 5 \
+    --blocks CTGNVX \
+    --checksum Damm_2004 \
+    --case-prefix S \
+    --control-prefix C \
+    --output ./output
+```
+
+CLI flags always take precedence over `study.cfg` values, which in turn take precedence over built-in defaults.
+
+---
 
 ### `baseline` — generate a fresh baseline from named tracks
 
@@ -278,33 +281,28 @@ Random numbers are drawn from a **global pool** across all samples and groups, s
 
 ---
 
-#### `batch --extend` — add subjects to existing samples (or create new ones)
+#### Auto-detect extend vs new (default behaviour)
 
-Pass the `--extend` flag when you want to top up samples that already have a baseline. In this mode the counts in the sheet are **additional** subjects to add, not totals.
-
-```bash
-python idgenerator.py batch \
-    --study      MyStudy \
-    --center     01 \
-    --input-file extra_samples.xlsx \
-    --digits     5 \
-    --blocks     CTGNVX \
-    --checksum   Damm_2004 \
-    --extend \
-    --input-dir  ./output \
-    --output     ./output
-```
-
-Behaviour per row:
+By default, `batch` scans the output directory for existing baselines and decides per row:
 
 | Situation | What happens |
 |-----------|-------------|
 | Baseline already exists for this sample + group | **Extend** — existing IDs are kept, new IDs appended, old file renamed to `.old` |
-| No baseline found for this sample + group | **Create new** — acts exactly like normal `batch` mode |
+| No baseline found for this sample + group | **Create new** — acts exactly like a fresh batch run |
 
-You can mix new and existing samples in the same sheet — the script handles each row automatically.
+You can freely mix new and existing samples in the same sheet. The counts in the sheet are always **additional** subjects to add on top of what already exists.
 
-**Important:** `--input-dir` tells the script where to look for existing baseline files (defaults to `--output` if omitted). New random numbers are guaranteed unique across both old and new IDs.
+```bash
+python idgenerator.py batch --input-file extra_samples.xlsx --output ./output
+```
+
+To force every row to be treated as brand new (ignoring any existing baselines), use `--fresh`:
+
+```bash
+python idgenerator.py batch --input-file samples.xlsx --fresh --output ./output
+```
+
+**`--input-dir`** lets you specify a different directory to search for existing baselines (defaults to `--output`). New random numbers are guaranteed unique across both old and new IDs.
 
 **Example sheet combining new and existing samples:**
 
@@ -422,9 +420,9 @@ By default, only the `IDP_IDT` file is written per sample. Pass `--shuffle` to a
 |-------------------|--------------------|
 | Windows only (WinForms) | Windows / macOS / Linux |
 | GUI application | Command-line interface |
-| Config saved as `Config.xml` | All parameters passed as flags |
+| Config saved as `Config.xml` | Config saved as `study.cfg` (JSON) via `init` command; loaded automatically on every subsequent run |
 | Output written next to `.exe` | Output written to `--output` directory |
-| 5 operations via radio buttons | 6 subcommands: `baseline`, `batch`, `followup`, `add-track`, `extend`, `external` |
+| 5 operations via radio buttons | 7 subcommands: `init`, `baseline`, `batch`, `followup`, `add-track`, `extend`, `external` |
 | No batch/sample-sheet input | New `batch` command with case/control `G` block |
 | No mixed new/extend in one operation | `batch --extend` auto-detects existing samples and adds to them; unknown samples are created fresh |
 | Bug in `ExtendBaseline` (IDT overwritten with IDS value) | Fixed |

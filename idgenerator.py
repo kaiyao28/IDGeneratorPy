@@ -87,11 +87,58 @@ Output files (tab-separated .txt):
 
 import argparse
 import csv
+import json
 import os
 import random
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STUDY CONFIG  (mirrors original Config.xml — saved once, loaded on every run)
+# ─────────────────────────────────────────────────────────────────────────────
+
+CONFIG_FILENAME = "study.cfg"
+
+CONFIG_KEYS = [
+    "study", "center", "digits", "blocks", "checksum",
+    "case_prefix", "control_prefix", "output",
+]
+
+
+def _save_config(cfg: dict, output_dir: str) -> None:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / CONFIG_FILENAME
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"Study config saved to {path}")
+
+
+def _load_config(output_dir: str) -> dict:
+    """Return config dict from study.cfg in output_dir, or empty dict if not found."""
+    path = Path(output_dir) / CONFIG_FILENAME
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _apply_config(args: argparse.Namespace, cfg: dict) -> None:
+    """Fill in any args not supplied on the CLI from the saved config."""
+    mapping = {
+        "study":           "study",
+        "center":          "center",
+        "digits":          "digits",
+        "blocks":          "blocks",
+        "checksum":        "checksum",
+        "case_prefix":     "case_prefix",
+        "control_prefix":  "control_prefix",
+        "output":          "output",
+    }
+    for arg_attr, cfg_key in mapping.items():
+        if cfg_key in cfg and getattr(args, arg_attr, None) in (None, argparse.SUPPRESS):
+            setattr(args, arg_attr, cfg[cfg_key])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOGGING  (mirrors original WriteInfo → LogFile.txt behaviour)
@@ -1147,23 +1194,35 @@ def main():
 
     # ── shared parent ────────────────────────────────────────────────────────
     shared = argparse.ArgumentParser(add_help=False)
-    shared.add_argument("--study",    required=True)
-    shared.add_argument("--center",   default="",
-                        help="Study center code (default: empty)")
-    shared.add_argument("--digits",   type=int, default=5,
+    shared.add_argument("--study",    default=None,
+                        help="Study name (loaded from study.cfg if omitted)")
+    shared.add_argument("--center",   default=None,
+                        help="Study center code (loaded from study.cfg if omitted)")
+    shared.add_argument("--digits",   type=int, default=None,
                         help="Digits for unique number field (default: 5)")
-    shared.add_argument("--blocks",   default="CTNVX",
+    shared.add_argument("--blocks",   default=None,
                         help="Building block order, e.g. CTNVX or CTGNVX (default: CTNVX)")
-    shared.add_argument("--checksum", default="Damm_2004",
-                        choices=list(CHECKSUMS.keys()),
+    shared.add_argument("--checksum", default=None,
+                        choices=list(CHECKSUMS.keys()) + [None],
                         help="Checksum algorithm (default: Damm_2004)")
     shared.add_argument("--output",   default=".",
-                        help="Output directory (default: current directory)")
+                        help="Output / study directory (default: current directory)")
     shared.add_argument("--shuffle", action="store_true",
-                        help="Also generate the row-shuffled IDS_IDT file. "
-                             "By default only the IDP_IDT file is written.")
+                        help="Also generate the row-shuffled IDS_IDT file.")
     shared.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducible ID generation (optional).")
+
+    # ── init ─────────────────────────────────────────────────────────────────
+    p = sub.add_parser("init",
+                       help="Save study parameters to study.cfg — run once per project")
+    p.add_argument("--study",    required=True)
+    p.add_argument("--center",   default="", help="Study center code")
+    p.add_argument("--digits",   type=int, default=5)
+    p.add_argument("--blocks",   default="CTNVX")
+    p.add_argument("--checksum", default="Damm_2004", choices=list(CHECKSUMS.keys()))
+    p.add_argument("--case-prefix",    default="S")
+    p.add_argument("--control-prefix", default="C")
+    p.add_argument("--output",   default=".", help="Study output directory")
 
     # ── baseline ─────────────────────────────────────────────────────────────
     p = sub.add_parser("baseline", parents=[shared],
@@ -1177,26 +1236,23 @@ def main():
     p.add_argument("--input-file", required=True,
                    help="Sample sheet file (.txt .csv .tsv .xlsx .xls). "
                         "Columns: SampleName, NCases, NControls")
-    p.add_argument("--case-prefix",    default="S",
-                   help="Single-letter prefix for case IDs (default: S)")
-    p.add_argument("--control-prefix", default="C",
-                   help="Single-letter prefix for control IDs (default: C)")
-    p.add_argument("--extend", action="store_true",
-                   help="Extend existing baselines instead of creating new ones. "
-                        "Counts in the sheet are treated as ADDITIONAL subjects to add. "
-                        "Samples with no existing baseline are created fresh.")
+    p.add_argument("--case-prefix",    default=None,
+                   help="Single-letter prefix for case IDs (loaded from study.cfg if omitted)")
+    p.add_argument("--control-prefix", default=None,
+                   help="Single-letter prefix for control IDs (loaded from study.cfg if omitted)")
+    p.add_argument("--fresh", action="store_true",
+                   help="Force all rows to be created new, ignoring any existing baselines.")
     p.add_argument("--separate", action="store_true",
                    help="Also write one file per site/group in addition to the combined ALL file.")
     p.add_argument("--input-dir", default=None,
-                   help="Where to look for existing baseline files when using --extend. "
-                        "Defaults to --output if not specified.")
+                   help="Where to look for existing baseline files. Defaults to --output.")
 
     # ── followup ─────────────────────────────────────────────────────────────
     p = sub.add_parser("followup", parents=[shared],
                        help="Generate follow-up visit IDs from existing baseline files")
     p.add_argument("--visit",     required=True, type=int,
                    help="Follow-up visit number (e.g. 2)")
-    p.add_argument("--input-dir", default=".",
+    p.add_argument("--input-dir", default=None,
                    help="Directory containing baseline IDS_IDT files (default: .)")
 
     # ── add-track ─────────────────────────────────────────────────────────────
@@ -1215,7 +1271,7 @@ def main():
                    help="Existing tracks and counts, e.g. 'TrackA:100,TrackB:200'")
     p.add_argument("--new-samples", required=True,
                    help="New subjects per track, e.g. 'TrackA:20,TrackB:30'")
-    p.add_argument("--input-dir", default=".",
+    p.add_argument("--input-dir", default=None,
                    help="Directory containing the existing baseline files (default: .)")
 
     # ── external ─────────────────────────────────────────────────────────────
@@ -1223,21 +1279,53 @@ def main():
                        help="Create external-project IDs linked to an existing baseline")
     p.add_argument("--ext-project", required=True,
                    help="External project name (used in filenames)")
-    p.add_argument("--input-dir", default=".")
+    p.add_argument("--input-dir", default=None)
 
     args = parser.parse_args()
 
+    # ── Load study.cfg and fill in any missing args ───────────────────────────
+    out_dir = getattr(args, "output", ".")
+    cfg = _load_config(out_dir)
+    if cfg:
+        _apply_config(args, cfg)
+
+    # Apply hardcoded defaults for anything still None after config load
+    _defaults = dict(center="", digits=5, blocks="CTNVX",
+                     checksum="Damm_2004", case_prefix="S", control_prefix="C")
+    for attr, val in _defaults.items():
+        if getattr(args, attr, None) is None:
+            setattr(args, attr, val)
+
+    # ── Handle init before logging (no output dir needed yet) ─────────────────
+    if args.command == "init":
+        cfg_data = {
+            "study":           args.study,
+            "center":          args.center,
+            "digits":          args.digits,
+            "blocks":          args.blocks,
+            "checksum":        args.checksum,
+            "case_prefix":     args.case_prefix,
+            "control_prefix":  args.control_prefix,
+            "output":          args.output,
+        }
+        _save_config(cfg_data, args.output)
+        if cfg:
+            print("Previous config overwritten.")
+        sys.exit(0)
+
+    # ── Seed and logging ──────────────────────────────────────────────────────
     seed = getattr(args, "seed", None)
     if seed is not None:
         random.seed(seed)
 
-    out_dir = getattr(args, "output", ".")
     _log_init(out_dir)
     if seed is not None:
         _log(f"Random seed  : {seed}")
     _log(f"{'='*60}")
     _log(f"Command  : {args.command}")
     _log(f"Arguments: {' '.join(sys.argv[1:])}")
+    if cfg:
+        _log(f"Config   : loaded from {Path(out_dir) / CONFIG_FILENAME}")
     _log(f"{'='*60}")
 
     if args.command == "baseline":
@@ -1246,18 +1334,19 @@ def main():
                                shuffle=args.shuffle)
 
     elif args.command == "batch":
+        # Auto-detect extend vs new per row by default; --fresh forces all new
         ok = generate_batch(args.study, args.center, args.input_file,
                             args.digits, args.blocks, args.checksum,
                             args.case_prefix, args.control_prefix, args.output,
-                            extend_mode=args.extend,
-                            input_dir=args.input_dir,
+                            extend_mode=not args.fresh,
+                            input_dir=args.input_dir or args.output,
                             shuffle=args.shuffle,
                             separate=args.separate)
 
     elif args.command == "followup":
         ok = generate_followups(args.study, args.center,
                                 args.digits, args.blocks, args.checksum,
-                                args.visit, args.input_dir, args.output)
+                                args.visit, args.input_dir or args.output, args.output)
 
     elif args.command == "add-track":
         ok = add_track(args.study, args.track, args.output, shuffle=args.shuffle)
@@ -1267,12 +1356,13 @@ def main():
         new_samples = dict(_parse_tracks(args.new_samples))
         ok = extend_baseline(args.study, args.center, tracks, new_samples,
                              args.digits, args.blocks, args.checksum,
-                             args.input_dir, args.output, shuffle=args.shuffle)
+                             args.input_dir or args.output, args.output,
+                             shuffle=args.shuffle)
 
     elif args.command == "external":
         ok = create_external_ids(args.study, args.center, args.ext_project,
                                  args.digits, args.blocks, args.checksum,
-                                 args.input_dir, args.output)
+                                 args.input_dir or args.output, args.output)
 
     sys.exit(0 if ok else 1)
 
