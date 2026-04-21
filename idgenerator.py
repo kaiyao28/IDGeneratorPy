@@ -852,6 +852,11 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     pos = 0
     all_idp_rows, all_ids_rows = [], []
 
+    # Per-site files go into a dedicated subfolder when --separate is used
+    sep_out = out / "per_site" if separate else None
+    if sep_out:
+        sep_out.mkdir(parents=True, exist_ok=True)
+
     for e in plan:
         sample_name  = e["sample_name"]
         group_prefix = e["group_prefix"]
@@ -883,13 +888,13 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             idp_file, ids_file, idp_rows, ids_rows = _write_baseline_for_track(
                 study, center, sample_name, group_prefix,
                 total_n, all_idp, all_ids, all_idt,
-                blocks, checksum_fn, out, ts,
+                blocks, checksum_fn, sep_out, ts,
                 shuffle=shuffle,
             )
             _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
-            _log(f"    IDP→IDT : {idp_file.name}")
+            _log(f"    IDP→IDT : per_site/{idp_file.name}")
             if ids_file:
-                _log(f"    IDS→IDT : {ids_file.name}")
+                _log(f"    IDS→IDT : per_site/{ids_file.name}")
         else:
             _, _, idp_rows, ids_rows = _write_baseline_for_track(
                 study, center, sample_name, group_prefix,
@@ -931,8 +936,13 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    baseline_files = sorted(f for f in inp.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
-                            if "_ALL_" not in f.name)
+    # Search both the main dir and the per_site subfolder (written by --separate)
+    search_dirs = [inp, inp / "per_site"]
+    baseline_files = sorted(
+        f for d in search_dirs if d.exists()
+        for f in d.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
+        if "_ALL_" not in f.name
+    )
     if not baseline_files:
         _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False
@@ -1129,8 +1139,12 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    baseline_files = sorted(f for f in inp.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
-                            if "_ALL_" not in f.name)
+    search_dirs = [inp, inp / "per_site"]
+    baseline_files = sorted(
+        f for d in search_dirs if d.exists()
+        for f in d.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
+        if "_ALL_" not in f.name
+    )
     if not baseline_files:
         _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False

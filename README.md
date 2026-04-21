@@ -133,12 +133,12 @@ The script checks `./ids/` for each site's existing baseline and auto-detects ex
 
 By default each `batch` run produces **one combined file** containing all sites and groups, with `Track` and `Group` columns added so the source is immediately readable. Pass `--separate` to also write individual per-site/group files alongside the combined one.
 
-| File | Who uses it | Contains |
-|------|-------------|----------|
-| `IDP_IDT_ALL` | Your team (coordinating center) | All personal data identifiers + temporary keys for this run, with Track and Group columns. Keep confidential. |
-| `IDP_IDT_T=…` | Your team | Same content, one file per site/group. Written only with `--separate`. |
-| `IDS_IDT_ALL` | Lab / analysts | All study data identifiers + temporary keys, row order shuffled across all sites. Written only with `--shuffle`. |
-| `IDS_IDT_T=…` | Lab / analysts | Per-site IDS file. Written only with `--shuffle --separate`. |
+| File | Location | Who uses it | Contains |
+|------|----------|-------------|----------|
+| `IDP_IDT_ALL` | `output/` | Your team (coordinating center) | All personal data identifiers + temporary keys for this run, with Track and Group columns. Keep confidential. |
+| `IDS_IDT_ALL` | `output/` | Lab / analysts | All study data identifiers + temporary keys, row order shuffled. Written only with `--shuffle`. |
+| `IDP_IDT_T=…` | `output/per_site/` | Your team | Same content, one file per site/group. Written only with `--separate`. |
+| `IDS_IDT_T=…` | `output/per_site/` | Lab / analysts | Per-site IDS file. Written only with `--shuffle --separate`. |
 
 Once data collection is complete and linkage is no longer needed, the IDT column can be deleted from the IDS file to make it fully anonymous.
 
@@ -182,7 +182,7 @@ python idgenerator.py batch --input-file test_full/samples.csv --seed 42 --outpu
 # Wave 2 — script auto-detects SiteA exists → extends; SiteC is new → creates
 python idgenerator.py batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
 
-# Wave 3 — new site; --shuffle produces IDS file; --separate also writes per-site files
+# Wave 3 — new site; --shuffle produces IDS file; --separate writes per-site files into test_full/ids/per_site/
 python idgenerator.py batch --input-file test_full/wave3.csv --shuffle --separate --seed 44 --output test_full/ids
 
 # Follow-up visit 2 — no --input-dir needed, defaults to --output
