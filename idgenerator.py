@@ -391,9 +391,9 @@ def _id_pools(digits: int):
 
 def _write_tsv(path, header, rows):
     with open(path, "w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f, delimiter="\t")
-        w.writerow(header)
-        w.writerows(rows)
+        f.write("\t".join(str(x) for x in header) + "\n")
+        for row in rows:
+            f.write("\t".join(str(x) for x in row) + "\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
