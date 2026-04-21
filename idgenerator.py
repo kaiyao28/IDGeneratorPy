@@ -927,42 +927,40 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         add_n    = new_samples.get(track_name, 0)
         total_n  = existing_n + add_n
 
-        ids_files = sorted(inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_Baseline.txt"))
         idp_files = sorted(inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_Baseline.txt"))
+        ids_files = sorted(inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_Baseline.txt"))
 
-        if not ids_files:
-            _log(f"ERROR: IDS baseline for track '{track_name}' not found in {inp}")
-            return False
         if not idp_files:
             _log(f"ERROR: IDP baseline for track '{track_name}' not found in {inp}")
             return False
 
-        actual_ids = count_data_lines(str(ids_files[0]))
         actual_idp = count_data_lines(str(idp_files[0]))
-        if actual_ids != existing_n:
-            _log(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
-            return False
         if actual_idp != existing_n:
             _log(f"ERROR: IDP file has {actual_idp} records, declared {existing_n}")
             return False
 
-        group  = get_param_from_filename(str(ids_files[0]), "G")
+        group  = get_param_from_filename(str(idp_files[0]), "G")
         len_c  = len(center)
         len_t  = len(track_name)
         len_g  = len(group)
         pos_n  = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
 
+        # IDS file is optional (only written when --shuffle was used originally)
         idt_to_ids_num = {}
-        with open(ids_files[0], encoding="utf-8") as f:
-            reader = csv.reader(f, delimiter="\t")
-            next(reader)
-            for row in reader:
-                if not row:
-                    continue
-                ids_id, _, idt_id = row[0], row[1], row[2]
-                ids_n = int(ids_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0
-                idt_n = int(idt_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0
-                idt_to_ids_num[idt_n] = ids_n
+        if ids_files:
+            actual_ids = count_data_lines(str(ids_files[0]))
+            if actual_ids != existing_n:
+                _log(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
+                return False
+            with open(ids_files[0], encoding="utf-8") as f:
+                reader = csv.reader(f, delimiter="\t")
+                next(reader)
+                for row in reader:
+                    if not row:
+                        continue
+                    ids_n = int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+                    idt_n = int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+                    idt_to_ids_num[idt_n] = ids_n
 
         idp_nums_existing = []
         idt_nums_existing = []
@@ -972,16 +970,16 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             for row in reader:
                 if not row:
                     continue
-                idp_id, _, idt_id = row[0], row[1], row[2]
-                idp_nums_existing.append(int(idp_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0)
-                idt_nums_existing.append(int(idt_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0)
+                idp_nums_existing.append(int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0)
+                idt_nums_existing.append(int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0)
 
         ids_nums_matched = []
-        for idt_n in idt_nums_existing:
-            if idt_n not in idt_to_ids_num:
-                _log(f"ERROR: IDT {idt_n} in IDP file has no match in IDS file.")
-                return False
-            ids_nums_matched.append(idt_to_ids_num[idt_n])
+        if idt_to_ids_num:
+            for idt_n in idt_nums_existing:
+                if idt_n not in idt_to_ids_num:
+                    _log(f"ERROR: IDT {idt_n} in IDP file has no match in IDS file.")
+                    return False
+                ids_nums_matched.append(idt_to_ids_num[idt_n])
 
         new_idp = _unique_randoms(lo_idp, hi_idp, add_n, set(idp_nums_existing))
         new_ids = _unique_randoms(lo_ids, hi_ids, add_n, set(ids_nums_matched))
@@ -999,11 +997,13 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             shuffle=shuffle,
         )
 
-        ids_files[0].rename(ids_files[0].with_suffix(".old"))
+        if ids_files:
+            ids_files[0].rename(ids_files[0].with_suffix(".old"))
         idp_files[0].rename(idp_files[0].with_suffix(".old"))
         _log(f"  [{track_name}] extended {existing_n} → {total_n}")
         _log(f"    IDP→IDT : {idp_file.name}")
-        _log(f"    IDS→IDT : {ids_file.name}")
+        if ids_file:
+            _log(f"    IDS→IDT : {ids_file.name}")
         _log(f"    (old files renamed to .old)")
 
     _log("Done.")
