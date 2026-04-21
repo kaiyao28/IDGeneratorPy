@@ -151,6 +151,46 @@ Once data collection is complete and linkage is no longer needed, the IDT column
 
 ---
 
+### A complete multi-wave example
+
+Below is a full run covering every major command in sequence. It can serve as a quick sanity check that your installation is working.
+
+```bash
+# Wave 1 — fresh baseline for two sites
+python idgenerator.py batch \
+    --study MyStudy --center 01 \
+    --input-file wave1.csv \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --case-prefix S --control-prefix C \
+    --output ./ids
+
+# Wave 2 — extend SiteA, add SiteC for the first time
+python idgenerator.py batch \
+    --study MyStudy --center 01 \
+    --input-file wave2.csv \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --case-prefix S --control-prefix C \
+    --extend --input-dir ./ids --output ./ids
+
+# Wave 3 — new site, also produce the shuffled IDS file for the lab
+python idgenerator.py batch \
+    --study MyStudy --center 01 \
+    --input-file wave3.csv \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --case-prefix S --control-prefix C \
+    --shuffle --output ./ids
+
+# Follow-up visit 2 for all sites that have an IDS file
+python idgenerator.py followup \
+    --study MyStudy --center 01 \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --visit 2 --input-dir ./ids --output ./ids
+```
+
+After each run, `./ids/LogFile.txt` records a timestamped audit trail of every command and every file written. Old baseline files replaced by an extend step are renamed `.old` and kept alongside the current file.
+
+---
+
 ## Commands
 
 ### `baseline` — generate a fresh baseline from named tracks
