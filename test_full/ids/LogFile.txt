@@ -1,102 +1,108 @@
-2026-04-21 14:32:30: Random seed  : 42
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Command  : batch
-2026-04-21 14:32:30: Arguments: batch --input-file test_full/samples.csv --seed 42 --output test_full/ids
-2026-04-21 14:32:30: Config   : loaded from test_full/ids/study.cfg
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Reading sample sheet: test_full/samples.csv
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: Random seed  : 42
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Command  : batch
+2026-04-21 14:37:16: Arguments: batch --input-file test_full/samples.csv --seed 42 --output test_full/ids
+2026-04-21 14:37:16: Config   : loaded from test_full/ids/study.cfg
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Reading sample sheet: test_full/samples.csv
+2026-04-21 14:37:16: 
 Mode: extend
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: 
 Sample                Group Action      Add  Existing
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   SiteA                   S new          10         —
-2026-04-21 14:32:30:   SiteA                   C new          20         —
-2026-04-21 14:32:30:   SiteB                   S new           5         —
-2026-04-21 14:32:30:   SiteB                   C new          10         —
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   New IDs to generate: 45
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   SiteA                   S new          10         —
+2026-04-21 14:37:16:   SiteA                   C new          20         —
+2026-04-21 14:37:16:   SiteB                   S new           5         —
+2026-04-21 14:37:16:   SiteB                   C new          10         —
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   New IDs to generate: 45
 
-2026-04-21 14:32:30: ID-P pool : 10000 – 39999
-2026-04-21 14:32:30: ID-S pool : 40000 – 69999
-2026-04-21 14:32:30: ID-T pool : 70000 – 99999
-2026-04-21 14:32:30: Case prefix: 'S'   Control prefix: 'C'
+2026-04-21 14:37:16: ID-P pool : 10000 – 39999
+2026-04-21 14:37:16: ID-S pool : 40000 – 69999
+2026-04-21 14:37:16: ID-T pool : 70000 – 99999
+2026-04-21 14:37:16: Case prefix: 'S'   Control prefix: 'C'
 
-2026-04-21 14:32:30:   [SiteA / S] cases: 10 new
-2026-04-21 14:32:30:   [SiteA / C] controls: 20 new
-2026-04-21 14:32:30:   [SiteB / S] cases: 5 new
-2026-04-21 14:32:30:   [SiteB / C] controls: 10 new
-2026-04-21 14:32:30:   Combined IDP_ALL : 20260421_143230_TestStudy_IDP_IDT_ALL_N=45_Baseline.txt
-2026-04-21 14:32:30:   Combined IDS_ALL : 20260421_143230_TestStudy_IDS_IDT_ALL_N=45_Baseline.txt
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16:   [SiteA / S] cases: 10 new
+2026-04-21 14:37:16:   [SiteA / C] controls: 20 new
+2026-04-21 14:37:16:   [SiteB / S] cases: 5 new
+2026-04-21 14:37:16:   [SiteB / C] controls: 10 new
+2026-04-21 14:37:16:   Master IDP_ALL : 20260421_143716_TestStudy_IDP_IDT_ALL_N=45_Baseline.txt  (N=45_Baseline)
+2026-04-21 14:37:16:   Master IDS_ALL : 20260421_143716_TestStudy_IDS_IDT_ALL_N=45_Baseline.txt  (N=45_Baseline)
+2026-04-21 14:37:16: 
 Done.
-2026-04-21 14:32:30: Random seed  : 43
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Command  : batch
-2026-04-21 14:32:30: Arguments: batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
-2026-04-21 14:32:30: Config   : loaded from test_full/ids/study.cfg
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Reading sample sheet: test_full/wave2.csv
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: Random seed  : 43
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Command  : batch
+2026-04-21 14:37:16: Arguments: batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
+2026-04-21 14:37:16: Config   : loaded from test_full/ids/study.cfg
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Reading sample sheet: test_full/wave2.csv
+2026-04-21 14:37:16: 
 Mode: extend
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: 
 Sample                Group Action      Add  Existing
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   SiteA                   S extend        3        10
-2026-04-21 14:32:30:   SiteA                   C extend        5        20
-2026-04-21 14:32:30:   SiteC                   S new           4         —
-2026-04-21 14:32:30:   SiteC                   C new           8         —
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   New IDs to generate: 20
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   SiteA                   S extend        3        10
+2026-04-21 14:37:16:   SiteA                   C extend        5        20
+2026-04-21 14:37:16:   SiteC                   S new           4         —
+2026-04-21 14:37:16:   SiteC                   C new           8         —
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   New IDs to generate: 20
 
-2026-04-21 14:32:30: ID-P pool : 10000 – 39999
-2026-04-21 14:32:30: ID-S pool : 40000 – 69999
-2026-04-21 14:32:30: ID-T pool : 70000 – 99999
-2026-04-21 14:32:30: Case prefix: 'S'   Control prefix: 'C'
+2026-04-21 14:37:16: ID-P pool : 10000 – 39999
+2026-04-21 14:37:16: ID-S pool : 40000 – 69999
+2026-04-21 14:37:16: ID-T pool : 70000 – 99999
+2026-04-21 14:37:16: Case prefix: 'S'   Control prefix: 'C'
 
-2026-04-21 14:32:30:   [SiteA / S] cases: extended 10 → 13
-2026-04-21 14:32:30:     (old files renamed to .old)
-2026-04-21 14:32:30:   [SiteA / C] controls: extended 20 → 25
-2026-04-21 14:32:30:     (old files renamed to .old)
-2026-04-21 14:32:30:   [SiteC / S] cases: 4 new
-2026-04-21 14:32:30:   [SiteC / C] controls: 8 new
-2026-04-21 14:32:30:   Combined IDP_ALL : 20260421_143230_TestStudy_IDP_IDT_ALL_N=50_Baseline.txt
-2026-04-21 14:32:30:   Combined IDS_ALL : 20260421_143230_TestStudy_IDS_IDT_ALL_N=50_Baseline.txt
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16:   [SiteA / S] cases: extended 10 → 13
+2026-04-21 14:37:16:     (old files renamed to .old)
+2026-04-21 14:37:16:   [SiteA / C] controls: extended 20 → 25
+2026-04-21 14:37:16:     (old files renamed to .old)
+2026-04-21 14:37:16:   [SiteC / S] cases: 4 new
+2026-04-21 14:37:16:   [SiteC / C] controls: 8 new
+2026-04-21 14:37:16:   Master IDP_ALL : 20260421_143716_TestStudy_IDP_IDT_ALL_N=65_Baseline.txt  (N=65_Baseline)
+2026-04-21 14:37:16:   Master IDS_ALL : 20260421_143716_TestStudy_IDS_IDT_ALL_N=65_Baseline.txt  (N=65_Baseline)
+2026-04-21 14:37:16: 
 Done.
-2026-04-21 14:32:30: Random seed  : 44
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Command  : batch
-2026-04-21 14:32:30: Arguments: batch --input-file test_full/wave3.csv --shuffle --seed 44 --output test_full/ids
-2026-04-21 14:32:30: Config   : loaded from test_full/ids/study.cfg
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Reading sample sheet: test_full/wave3.csv
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: Random seed  : 44
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Command  : batch
+2026-04-21 14:37:16: Arguments: batch --input-file test_full/wave3.csv --shuffle --seed 44 --output test_full/ids
+2026-04-21 14:37:16: Config   : loaded from test_full/ids/study.cfg
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Reading sample sheet: test_full/wave3.csv
+2026-04-21 14:37:16: 
 Mode: extend
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16: 
 Sample                Group Action      Add  Existing
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   SiteD                   S new           5         —
-2026-04-21 14:32:30:   SiteD                   C new           5         —
-2026-04-21 14:32:30: -------------------------------------------------------
-2026-04-21 14:32:30:   New IDs to generate: 10
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   SiteD                   S new           5         —
+2026-04-21 14:37:16:   SiteD                   C new           5         —
+2026-04-21 14:37:16: -------------------------------------------------------
+2026-04-21 14:37:16:   New IDs to generate: 10
 
-2026-04-21 14:32:30: ID-P pool : 10000 – 39999
-2026-04-21 14:32:30: ID-S pool : 40000 – 69999
-2026-04-21 14:32:30: ID-T pool : 70000 – 99999
-2026-04-21 14:32:30: Case prefix: 'S'   Control prefix: 'C'
+2026-04-21 14:37:16: ID-P pool : 10000 – 39999
+2026-04-21 14:37:16: ID-S pool : 40000 – 69999
+2026-04-21 14:37:16: ID-T pool : 70000 – 99999
+2026-04-21 14:37:16: Case prefix: 'S'   Control prefix: 'C'
 
-2026-04-21 14:32:30:   [SiteD / S] cases: 5 new
-2026-04-21 14:32:30:   [SiteD / C] controls: 5 new
-2026-04-21 14:32:30:   Combined IDP_ALL : 20260421_143230_TestStudy_IDP_IDT_ALL_N=10_Baseline.txt
-2026-04-21 14:32:30:   Combined IDS_ALL : 20260421_143230_TestStudy_IDS_IDT_ALL_N=10_Baseline.txt
-2026-04-21 14:32:30: 
+2026-04-21 14:37:16:   [SiteD / S] cases: 5 new
+2026-04-21 14:37:16:   [SiteD / C] controls: 5 new
+2026-04-21 14:37:16:   Master IDP_ALL : 20260421_143716_TestStudy_IDP_IDT_ALL_N=75_Baseline.txt  (N=75_Baseline)
+2026-04-21 14:37:16:   Master IDS_ALL : 20260421_143716_TestStudy_IDS_IDT_ALL_N=75_Baseline.txt  (N=75_Baseline)
+2026-04-21 14:37:16: 
 Done.
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30: Command  : followup
-2026-04-21 14:32:30: Arguments: followup --visit 2 --output test_full/ids
-2026-04-21 14:32:30: Config   : loaded from test_full/ids/study.cfg
-2026-04-21 14:32:30: ============================================================
-2026-04-21 14:32:30:   [SiteD/C] 5 follow-ups (V=2)  →  20260421_143230_TestStudy_IDS_IDSV2_T=SiteD_G=C_N=5_V=2.txt
-2026-04-21 14:32:30:   [SiteD/S] 5 follow-ups (V=2)  →  20260421_143230_TestStudy_IDS_IDSV2_T=SiteD_G=S_N=5_V=2.txt
-2026-04-21 14:32:30: Done.
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16: Command  : followup
+2026-04-21 14:37:16: Arguments: followup --visit 2 --output test_full/ids
+2026-04-21 14:37:16: Config   : loaded from test_full/ids/study.cfg
+2026-04-21 14:37:16: ============================================================
+2026-04-21 14:37:16:   [SiteA/C] 25 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteA_G=C_N=25_V=2.txt
+2026-04-21 14:37:16:   [SiteA/S] 13 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteA_G=S_N=13_V=2.txt
+2026-04-21 14:37:16:   [SiteB/C] 10 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteB_G=C_N=10_V=2.txt
+2026-04-21 14:37:16:   [SiteB/S] 5 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteB_G=S_N=5_V=2.txt
+2026-04-21 14:37:16:   [SiteC/C] 8 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteC_G=C_N=8_V=2.txt
+2026-04-21 14:37:16:   [SiteC/S] 4 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteC_G=S_N=4_V=2.txt
+2026-04-21 14:37:16:   [SiteD/C] 5 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteD_G=C_N=5_V=2.txt
+2026-04-21 14:37:16:   [SiteD/S] 5 follow-ups (V=2)  →  20260421_143716_TestStudy_IDS_IDSV2_T=SiteD_G=S_N=5_V=2.txt
+2026-04-21 14:37:16: Done.

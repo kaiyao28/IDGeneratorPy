@@ -581,15 +581,11 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
     idp_rows = list(zip(idp_ids, idp128, idt_ids,
                         [track_name] * track_n, [group] * track_n))
 
-    # IDS rows always returned (for ALL file); per-site IDS file only written with --shuffle
-    ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
-
-    if not shuffle:
-        return idp_file, None, idp_rows, ids_rows
-
+    # IDS per-site file always written; --shuffle controls whether rows are randomised
     ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_Baseline.txt"
     _write_tsv(ids_file, ["IDS", "IDS128", "IDT"],
                ((ids_ids[i], ids128[i], idt_ids[i]) for i in order))
+    ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
 
     return idp_file, ids_file, idp_rows, ids_rows
 
@@ -735,6 +731,50 @@ def _find_baseline_pair(study: str, sample_name: str, group: str,
     return (ids_matches[-1] if ids_matches else None), idp_matches[-1]
 
 
+def _rebuild_master_all(study: str, out: Path, ts: str):
+    """
+    Rebuild the master IDP_IDT_ALL and IDS_IDT_ALL files by reading every current
+    (non-.old) per-site file in per_site/. Called after each batch run so the master
+    files always reflect the complete state of ALL sites across ALL waves.
+    Old master ALL files are renamed to .old.
+    """
+    per_site = out / "per_site"
+
+    idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*_Baseline.txt"))
+    ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*_Baseline.txt"))
+
+    all_idp_rows, all_ids_rows = [], []
+    for f in idp_files:
+        track = get_param_from_filename(str(f), "T")
+        group = get_param_from_filename(str(f), "G")
+        with open(f, encoding="utf-8") as fh:
+            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+        for line in lines[1:]:
+            all_idp_rows.append(line.split("\t") + [track, group])
+
+    for f in ids_files:
+        track = get_param_from_filename(str(f), "T")
+        group = get_param_from_filename(str(f), "G")
+        with open(f, encoding="utf-8") as fh:
+            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+        for line in lines[1:]:
+            all_ids_rows.append(line.split("\t") + [track, group])
+
+    # Retire old master ALL files
+    for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*_Baseline.txt")):
+        old.rename(old.with_suffix(".old"))
+    for old in sorted(out.glob(f"*_{study}_IDS_IDT_ALL_*_Baseline.txt")):
+        old.rename(old.with_suffix(".old"))
+
+    master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}_Baseline.txt"
+    _write_tsv(master_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
+
+    master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}_Baseline.txt"
+    _write_tsv(master_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
+
+    return master_idp, master_ids
+
+
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
                    case_prefix, control_prefix, output_dir,
                    extend_mode=False, input_dir=None, shuffle=False):
@@ -863,7 +903,6 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
     ts = timestamp()
     pos = 0
-    all_idp_rows, all_ids_rows = [], []
 
     # Individual per-site files always written to per_site/ subfolder
     per_site_out = out / "per_site"
@@ -885,7 +924,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             existing_n = e["existing_n"]
             ex_ids = e["ex_ids"]
             if not ex_ids:
-                # Original run had no --shuffle; backfill IDS IDs for existing records now
+                # Original run had no IDS file; backfill IDS IDs for existing records
                 bf_ids = new_ids_pool[ids_backfill_pos:ids_backfill_pos + existing_n]
                 ids_backfill_pos += existing_n
                 all_ids = bf_ids + new_ids
@@ -904,7 +943,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             action_str = f"{add_n} new"
         e["total_n"] = total_n
 
-        idp_file, ids_file, idp_rows, ids_rows = _write_baseline_for_track(
+        _write_baseline_for_track(
             study, center, sample_name, group_prefix,
             total_n, all_idp, all_ids, all_idt,
             blocks, checksum_fn, per_site_out, ts,
@@ -914,16 +953,10 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
         if mode == "extend":
             _log(f"    (old files renamed to .old)")
 
-        all_idp_rows.extend(idp_rows)
-        all_ids_rows.extend(ids_rows)
-
-    total_all_n = sum(e["total_n"] for e in plan)
-    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_all_n}_Baseline.txt"
-    _write_tsv(combined_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
-    _log(f"  Combined IDP_ALL : {combined_idp.name}")
-    combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_all_n}_Baseline.txt"
-    _write_tsv(combined_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
-    _log(f"  Combined IDS_ALL : {combined_ids.name}")
+    # Rebuild master ALL files from every current per-site file (all waves, all sites)
+    master_idp, master_ids = _rebuild_master_all(study, out, ts)
+    _log(f"  Master IDP_ALL : {master_idp.name}")
+    _log(f"  Master IDS_ALL : {master_ids.name}")
 
     _log("\nDone.")
     return True
