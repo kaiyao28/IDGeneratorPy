@@ -548,20 +548,97 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
 # BATCH BASELINE  (sample sheet with cases + controls)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _read_existing_nums(ids_file: Path, idp_file: Path, blocks: str,
+                        center: str, track_name: str, group: str, digits: int):
+    """
+    Read the numeric N-field values from an existing IDS_IDT / IDP_IDT baseline pair.
+    Returns (idp_nums, ids_nums_matched, idt_nums, existing_count).
+    IDS numbers are cross-referenced via IDT so they align positionally with IDP.
+    """
+    len_c = len(center)
+    len_t = len(track_name)
+    len_g = len(group)
+    pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
+
+    # IDS file: build idt_num → ids_num lookup
+    idt_to_ids = {}
+    with open(ids_file, encoding="utf-8") as f:
+        reader = csv.reader(f, delimiter="\t")
+        next(reader)
+        for row in reader:
+            if not row:
+                continue
+            ids_n = int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+            idt_n = int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0
+            idt_to_ids[idt_n] = ids_n
+
+    # IDP file: ordered list of (idp_num, idt_num)
+    idp_nums, idt_nums = [], []
+    with open(idp_file, encoding="utf-8") as f:
+        reader = csv.reader(f, delimiter="\t")
+        next(reader)
+        for row in reader:
+            if not row:
+                continue
+            idp_nums.append(int(row[0][pos_n:pos_n + digits]) if pos_n >= 0 else 0)
+            idt_nums.append(int(row[2][pos_n:pos_n + digits]) if pos_n >= 0 else 0)
+
+    ids_nums_matched = []
+    for idt_n in idt_nums:
+        if idt_n not in idt_to_ids:
+            raise ValueError(
+                f"IDT value {idt_n} found in IDP file but not in IDS file. "
+                "Ensure both files are from the same baseline run."
+            )
+        ids_nums_matched.append(idt_to_ids[idt_n])
+
+    return idp_nums, ids_nums_matched, idt_nums, len(idp_nums)
+
+
+def _find_baseline_pair(study: str, sample_name: str, group: str,
+                        search_dir: Path):
+    """
+    Return (ids_file, idp_file) for an existing baseline, or (None, None) if not found.
+    Matches the most recent file when multiple timestamps exist.
+    """
+    g_tag = f"_G={group}" if group else ""
+    ids_matches = sorted(search_dir.glob(
+        f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
+    ))
+    idp_matches = sorted(search_dir.glob(
+        f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_Baseline.txt"
+    ))
+    if ids_matches and idp_matches:
+        return ids_matches[-1], idp_matches[-1]
+    return None, None
+
+
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
-                   case_prefix, control_prefix, output_dir):
+                   case_prefix, control_prefix, output_dir,
+                   extend_mode=False, input_dir=None):
     """
     Read a sample sheet and generate one baseline per sample×group.
 
-    The G building block (if present in --blocks) inserts `case_prefix` for cases
-    and `control_prefix` for controls, making the case/control status visible directly
-    in every ID and consistent across all samples.
+    Default mode (extend_mode=False)
+    ---------------------------------
+    Every sample in the sheet is treated as brand new.
+    Counts = total subjects to generate.
 
-    Sample sheet columns: SampleName, NCases, NControls
+    Extend mode (extend_mode=True, --extend flag)
+    ----------------------------------------------
+    Counts = ADDITIONAL subjects to add on top of any existing baseline.
+    - If a baseline already exists for that sample+group in input_dir:
+        existing IDs are preserved, new ones are appended, old files renamed to .old.
+    - If no baseline exists for that sample+group:
+        new files are created from scratch (same as default mode).
+
+    In both modes random numbers are drawn globally, guaranteeing uniqueness across
+    every sample, group, and existing baseline in the same run.
     """
     checksum_fn = CHECKSUMS[checksum_name]
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    inp = Path(input_dir) if input_dir else out
 
     print(f"Reading sample sheet: {input_file}")
     try:
@@ -576,58 +653,124 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
     lo_idp, hi_idp, lo_ids, hi_ids, lo_idt, hi_idt = _id_pools(digits)
 
-    # Validate total against pool limits
-    total_n = sum(nc + nk for _, nc, nk in samples)
+    # ── Classify each sample×group and collect existing numbers ──────────────
+    # Each entry: dict with keys sample_name, group_prefix, group_label,
+    #   add_n, mode ("new"|"extend"), and optionally existing_* fields.
+    plan = []
+    used_idp, used_ids, used_idt = set(), set(), set()
+
+    for sample_name, n_cases, n_controls in samples:
+        for group_label, add_n, group_prefix in [
+            ("cases",    n_cases,    case_prefix),
+            ("controls", n_controls, control_prefix),
+        ]:
+            if add_n == 0:
+                continue
+
+            entry = dict(
+                sample_name=sample_name,
+                group_prefix=group_prefix,
+                group_label=group_label,
+                add_n=add_n,
+            )
+
+            if extend_mode:
+                ids_f, idp_f = _find_baseline_pair(study, sample_name,
+                                                    group_prefix, inp)
+                if ids_f and idp_f:
+                    try:
+                        ex_idp, ex_ids, ex_idt, ex_n = _read_existing_nums(
+                            ids_f, idp_f, blocks, center,
+                            sample_name, group_prefix, digits,
+                        )
+                    except ValueError as e:
+                        print(f"ERROR: {e}")
+                        return False
+                    entry.update(mode="extend",
+                                 existing_n=ex_n,
+                                 ex_idp=ex_idp, ex_ids=ex_ids, ex_idt=ex_idt,
+                                 old_ids_file=ids_f, old_idp_file=idp_f)
+                    used_idp.update(ex_idp)
+                    used_ids.update(ex_ids)
+                    used_idt.update(ex_idt)
+                else:
+                    entry["mode"] = "new"
+            else:
+                entry["mode"] = "new"
+
+            plan.append(entry)
+
+    # ── Validate total new IDs against pool limits ────────────────────────────
+    total_new = sum(e["add_n"] for e in plan)
     max_possible = (10 ** digits - 10 ** (digits - 1) - 3) // 3
     if digits == 10:
         max_possible = 2_147_483_647
-    if total_n > max_possible:
-        print(f"ERROR: {total_n} total IDs but maximum for {digits} digits is {max_possible}.")
+    if total_new > max_possible:
+        print(f"ERROR: {total_new} new IDs requested but max for {digits} digits is {max_possible}.")
         return False
 
-    print(f"\n{'Sample':<20} {'Cases':>8} {'Controls':>10}  {'Total':>7}")
-    print("-" * 52)
-    for name, nc, nk in samples:
-        print(f"  {name:<18} {nc:>8} {nk:>10}  {nc+nk:>7}")
-    print("-" * 52)
-    print(f"  {'TOTAL':<18} {sum(nc for _,nc,_ in samples):>8} "
-          f"{sum(nk for _,_,nk in samples):>10}  {total_n:>7}")
+    # ── Print plan ────────────────────────────────────────────────────────────
+    mode_label = "extend" if extend_mode else "new (all fresh)"
+    print(f"\nMode: {mode_label}")
+    print(f"\n{'Sample':<20} {'Group':>6} {'Action':<8} {'Add':>6} {'Existing':>9}")
+    print("-" * 55)
+    for e in plan:
+        existing_str = str(e.get("existing_n", "—")).rjust(9)
+        print(f"  {e['sample_name']:<18} {e['group_prefix']:>6} "
+              f"{e['mode']:<8} {e['add_n']:>6} {existing_str}")
+    print("-" * 55)
+    print(f"  New IDs to generate: {total_new}")
     print()
     print(f"ID-P pool : {lo_idp} – {hi_idp}")
     print(f"ID-S pool : {lo_ids} – {hi_ids}")
     print(f"ID-T pool : {lo_idt} – {hi_idt}")
-    print(f"Case prefix: '{case_prefix}'   Control prefix: '{control_prefix}'")
-    print(f"Generating {total_n} IDs across {len(samples)} sample(s)…\n")
+    print(f"Case prefix: '{case_prefix}'   Control prefix: '{control_prefix}'\n")
 
-    # Draw all random numbers globally once — ensures uniqueness across every sample and group
-    all_idp = _unique_randoms(lo_idp, hi_idp, total_n, set())
-    all_ids = _unique_randoms(lo_ids, hi_ids, total_n, set())
-    all_idt = _unique_randoms(lo_idt, hi_idt, total_n, set())
+    # ── Draw all NEW random numbers globally once ─────────────────────────────
+    # used_* already contains all existing numbers, so new draws cannot collide.
+    new_idp_pool = _unique_randoms(lo_idp, hi_idp, total_new, used_idp)
+    new_ids_pool = _unique_randoms(lo_ids, hi_ids, total_new, used_ids)
+    new_idt_pool = _unique_randoms(lo_idt, hi_idt, total_new, used_idt)
 
     ts = timestamp()
     pos = 0
 
-    for sample_name, n_cases, n_controls in samples:
-        for group_label, group_n, group_prefix in [
-            ("cases",    n_cases,    case_prefix),
-            ("controls", n_controls, control_prefix),
-        ]:
-            if group_n == 0:
-                print(f"  [{sample_name} / {group_prefix}] skipped (N=0)")
-                continue
+    for e in plan:
+        sample_name  = e["sample_name"]
+        group_prefix = e["group_prefix"]
+        group_label  = e["group_label"]
+        add_n        = e["add_n"]
+        mode         = e["mode"]
 
-            idp_file, ids_file = _write_baseline_for_track(
-                study, center, sample_name, group_prefix,
-                group_n,
-                all_idp[pos:pos + group_n],
-                all_ids[pos:pos + group_n],
-                all_idt[pos:pos + group_n],
-                blocks, checksum_fn, out, ts,
-            )
-            print(f"  [{sample_name} / {group_prefix}] {group_n} {group_label}")
-            print(f"    IDP→IDT : {idp_file.name}")
-            print(f"    IDS→IDT : {ids_file.name}")
-            pos += group_n
+        new_idp = new_idp_pool[pos:pos + add_n]
+        new_ids = new_ids_pool[pos:pos + add_n]
+        new_idt = new_idt_pool[pos:pos + add_n]
+        pos += add_n
+
+        if mode == "extend":
+            all_idp = e["ex_idp"] + new_idp
+            all_ids = e["ex_ids"] + new_ids
+            all_idt = e["ex_idt"] + new_idt
+            total_n = e["existing_n"] + add_n
+            # Rename old files before writing new ones
+            e["old_ids_file"].rename(e["old_ids_file"].with_suffix(".old"))
+            e["old_idp_file"].rename(e["old_idp_file"].with_suffix(".old"))
+            action_str = f"extended {e['existing_n']} → {total_n}"
+        else:
+            all_idp, all_ids, all_idt = new_idp, new_ids, new_idt
+            total_n = add_n
+            action_str = f"{add_n} new"
+
+        idp_file, ids_file = _write_baseline_for_track(
+            study, center, sample_name, group_prefix,
+            total_n, all_idp, all_ids, all_idt,
+            blocks, checksum_fn, out, ts,
+        )
+        print(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
+        print(f"    IDP→IDT : {idp_file.name}")
+        print(f"    IDS→IDT : {ids_file.name}")
+        if mode == "extend":
+            print(f"    (old files renamed to .old)")
 
     print("\nDone.")
     return True
@@ -934,6 +1077,13 @@ def main():
                    help="Single-letter prefix for case IDs (default: S)")
     p.add_argument("--control-prefix", default="C",
                    help="Single-letter prefix for control IDs (default: C)")
+    p.add_argument("--extend", action="store_true",
+                   help="Extend existing baselines instead of creating new ones. "
+                        "Counts in the sheet are treated as ADDITIONAL subjects to add. "
+                        "Samples with no existing baseline are created fresh.")
+    p.add_argument("--input-dir", default=None,
+                   help="Where to look for existing baseline files when using --extend. "
+                        "Defaults to --output if not specified.")
 
     # ── followup ─────────────────────────────────────────────────────────────
     p = sub.add_parser("followup", parents=[shared],
@@ -976,7 +1126,9 @@ def main():
     elif args.command == "batch":
         ok = generate_batch(args.study, args.center, args.input_file,
                             args.digits, args.blocks, args.checksum,
-                            args.case_prefix, args.control_prefix, args.output)
+                            args.case_prefix, args.control_prefix, args.output,
+                            extend_mode=args.extend,
+                            input_dir=args.input_dir)
 
     elif args.command == "followup":
         ok = generate_followups(args.study, args.center,

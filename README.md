@@ -123,6 +123,43 @@ Random numbers are drawn from a **global pool** across all samples and groups, s
 
 ---
 
+#### `batch --extend` — add subjects to existing samples (or create new ones)
+
+Pass the `--extend` flag when you want to top up samples that already have a baseline. In this mode the counts in the sheet are **additional** subjects to add, not totals.
+
+```bash
+python idgenerator.py batch \
+    --study      MyStudy \
+    --center     01 \
+    --input-file extra_samples.xlsx \
+    --digits     5 \
+    --blocks     CTGNVX \
+    --checksum   Damm_2004 \
+    --extend \
+    --input-dir  ./output \
+    --output     ./output
+```
+
+Behaviour per row:
+
+| Situation | What happens |
+|-----------|-------------|
+| Baseline already exists for this sample + group | **Extend** — existing IDs are kept, new IDs appended, old file renamed to `.old` |
+| No baseline found for this sample + group | **Create new** — acts exactly like normal `batch` mode |
+
+You can mix new and existing samples in the same sheet — the script handles each row automatically.
+
+**Important:** `--input-dir` tells the script where to look for existing baseline files (defaults to `--output` if omitted). New random numbers are guaranteed unique across both old and new IDs.
+
+**Example sheet combining new and existing samples:**
+
+| SampleName | NCases | NControls |
+|------------|--------|-----------|
+| Sample001  | 20     | 30        | ← already exists → will be extended |
+| Sample003  | 50     | 75        | ← new sample → will be created fresh |
+
+---
+
 ### `followup` — generate follow-up visit IDs
 
 Reads existing baseline IDS_IDT files and produces IDS↔IDSVn pairs for a new visit number. Works on files produced by both `baseline` and `batch`.
@@ -232,6 +269,7 @@ The `*128` columns contain Code 128 barcode-encoded strings.
 | Output written next to `.exe` | Output written to `--output` directory |
 | 5 operations via radio buttons | 6 subcommands: `baseline`, `batch`, `followup`, `add-track`, `extend`, `external` |
 | No batch/sample-sheet input | New `batch` command with case/control `G` block |
+| No mixed new/extend in one operation | `batch --extend` auto-detects existing samples and adds to them; unknown samples are created fresh |
 | Bug in `ExtendBaseline` (IDT overwritten with IDS value) | Fixed |
 
 ---
