@@ -153,41 +153,45 @@ Once data collection is complete and linkage is no longer needed, the IDT column
 
 ### A complete multi-wave example
 
-Below is a full run covering every major command in sequence. It can serve as a quick sanity check that your installation is working.
+The `test_full/` directory in this repository contains ready-to-run input sheets and the expected output for every major command. It is the quickest way to verify that your installation is working.
+
+**Input sheets included:**
+
+| File | Contents |
+|------|----------|
+| `test_full/samples.csv` | Wave 1 — SiteA (10 cases, 20 controls) and SiteB (5 cases, 10 controls) |
+| `test_full/wave2.csv` | Wave 2 — extend SiteA (+3/+5) and add SiteC fresh (4 cases, 8 controls) |
+| `test_full/wave3.csv` | Wave 3 — SiteD (5 cases, 5 controls) with `--shuffle` to produce IDS files |
+
+**Run all steps in order:**
 
 ```bash
-# Wave 1 — fresh baseline for two sites
-python idgenerator.py batch \
-    --study MyStudy --center 01 \
-    --input-file wave1.csv \
+# Wave 1 — fresh baseline
+python idgenerator.py batch --study TestStudy --center 01 \
+    --input-file test_full/samples.csv \
+    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --case-prefix S --control-prefix C --output test_full/ids
+
+# Wave 2 — extend SiteA, create SiteC
+python idgenerator.py batch --study TestStudy --center 01 \
+    --input-file test_full/wave2.csv \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
     --case-prefix S --control-prefix C \
-    --output ./ids
+    --extend --input-dir test_full/ids --output test_full/ids
 
-# Wave 2 — extend SiteA, add SiteC for the first time
-python idgenerator.py batch \
-    --study MyStudy --center 01 \
-    --input-file wave2.csv \
+# Wave 3 — new site, produce shuffled IDS file for the lab
+python idgenerator.py batch --study TestStudy --center 01 \
+    --input-file test_full/wave3.csv \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C \
-    --extend --input-dir ./ids --output ./ids
+    --case-prefix S --control-prefix C --shuffle --output test_full/ids
 
-# Wave 3 — new site, also produce the shuffled IDS file for the lab
-python idgenerator.py batch \
-    --study MyStudy --center 01 \
-    --input-file wave3.csv \
+# Follow-up visit 2 for SiteD (which has an IDS file from --shuffle above)
+python idgenerator.py followup --study TestStudy --center 01 \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C \
-    --shuffle --output ./ids
-
-# Follow-up visit 2 for all sites that have an IDS file
-python idgenerator.py followup \
-    --study MyStudy --center 01 \
-    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --visit 2 --input-dir ./ids --output ./ids
+    --visit 2 --input-dir test_full/ids --output test_full/ids
 ```
 
-After each run, `./ids/LogFile.txt` records a timestamped audit trail of every command and every file written. Old baseline files replaced by an extend step are renamed `.old` and kept alongside the current file.
+After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail. Extended files are renamed `.old` and kept alongside the current version.
 
 ---
 

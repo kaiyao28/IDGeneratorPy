@@ -1,5 +1,5 @@
-test_*/
 .DS_Store
 *.old
 __pycache__/
 *.pyc
+test_full/ids/
