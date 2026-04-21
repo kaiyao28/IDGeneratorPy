@@ -20,16 +20,16 @@ Each subject receives three linked IDs generated from separate random pools:
 
 IDs are assembled from configurable **building blocks** (`--blocks`):
 
-| Block | Meaning |
-|-------|---------|
-| `C` | Study center code |
-| `T` | Track / sample name |
-| `G` | Group label (e.g. `S` for cases, `C` for controls) — used with `batch` command |
-| `N` | Unique random number |
-| `V` | Visit number (`0` for IDP, `1` for IDS/IDT at baseline) |
-| `X` | Check digit |
+| Block | Meaning | When to use |
+|-------|---------|-------------|
+| `C` | **Study center** — the recruiting site (hospital, clinic, or lab). Embed this when your study runs across multiple sites so you can tell from the ID alone where a participant was enrolled. E.g. `01` = site 1, `02` = site 2. | Multi-center studies |
+| `T` | **Track** — the sample type or sub-study pipeline (e.g. `Blood`, `Urine`, `DNA`). Each track gets its own file pair. Embed this when one participant contributes more than one sample type so IDs from different lab pipelines cannot be mixed up. In `batch` mode, the `SampleName` column in your sheet fills this block. | Studies with multiple sample types |
+| `G` | **Group** — case/control label (e.g. `S` for cases, `C` for controls). Used with the `batch` command only. | Case/control batch runs |
+| `N` | **Unique random number** — the core random identifier drawn from a pool specific to the ID type (IDP / IDS / IDT). | Always required |
+| `V` | **Visit number** — `0` for IDP (personal data), `1` for IDS/IDT at baseline, higher integers for follow-up visits. | Longitudinal studies |
+| `X` | **Check digit** — a single computed digit appended to detect transcription errors. | Recommended for all IDs |
 
-> **Re-identification caution (per Olden et al. 2016):** Embedding participant characteristics (such as case/control status via `G`) directly in the ID should be done with care. If the code mapping is known, the ID itself can reveal group membership and undermine blinding. Use the `G` block only when group membership is not sensitive in your study design.
+> **Re-identification caution (per Olden et al. 2016):** Embedding participant characteristics (such as case/control status via `G`, or a sample type via `T`) directly in the ID should be done with care. If the code mapping is known, the ID itself can reveal group membership and potentially undermine blinding. Only embed characteristics that are not sensitive in your study design.
 
 Example with `--blocks CTGNVX`, center `01`, sample `Sample001`, group `S`, N=`12345`, visit `1`, check digit `4`:
 
