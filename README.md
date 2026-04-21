@@ -142,12 +142,26 @@ The script auto-detects which sites already exist and handles each row according
 
 ### What each output file is for
 
+By default each `batch` run produces **one combined file** containing all sites and groups, with `Track` and `Group` columns added so the source is immediately readable. Pass `--separate` to also write individual per-site/group files alongside the combined one.
+
 | File | Who uses it | Contains |
 |------|-------------|----------|
-| `IDP_IDT` | Your team (coordinating center) | Personal data identifier + temporary key. Keep confidential. |
-| `IDS_IDT` | Lab / analysts | Study data identifier + temporary key. Share for processing. Row order is randomised. |
+| `IDP_IDT_ALL` | Your team (coordinating center) | All personal data identifiers + temporary keys for this run, with Track and Group columns. Keep confidential. |
+| `IDP_IDT_T=…` | Your team | Same content, one file per site/group. Written only with `--separate`. |
+| `IDS_IDT_ALL` | Lab / analysts | All study data identifiers + temporary keys, row order shuffled across all sites. Written only with `--shuffle`. |
+| `IDS_IDT_T=…` | Lab / analysts | Per-site IDS file. Written only with `--shuffle --separate`. |
 
 Once data collection is complete and linkage is no longer needed, the IDT column can be deleted from the IDS file to make it fully anonymous.
+
+### Reproducible generation with `--seed`
+
+Pass `--seed <integer>` to any command to fix the random number generator. Running the same command twice with the same seed produces identical IDs — useful for validation or re-generating lost output.
+
+```bash
+python idgenerator.py batch ... --seed 42
+```
+
+The seed is recorded in `LogFile.txt` alongside the full argument list.
 
 ---
 
@@ -166,32 +180,33 @@ The `test_full/` directory in this repository contains ready-to-run input sheets
 **Run all steps in order:**
 
 ```bash
-# Wave 1 — fresh baseline
+# Wave 1 — fresh baseline, seeded for reproducibility
 python idgenerator.py batch --study TestStudy --center 01 \
     --input-file test_full/samples.csv \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C --output test_full/ids
+    --case-prefix S --control-prefix C --seed 42 --output test_full/ids
 
-# Wave 2 — extend SiteA, create SiteC
+# Wave 2 — extend SiteA, create SiteC fresh
 python idgenerator.py batch --study TestStudy --center 01 \
     --input-file test_full/wave2.csv \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
     --case-prefix S --control-prefix C \
-    --extend --input-dir test_full/ids --output test_full/ids
+    --extend --input-dir test_full/ids --seed 43 --output test_full/ids
 
-# Wave 3 — new site, produce shuffled IDS file for the lab
+# Wave 3 — new site with shuffled IDS file; --separate also writes per-site files
 python idgenerator.py batch --study TestStudy --center 01 \
     --input-file test_full/wave3.csv \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C --shuffle --output test_full/ids
+    --case-prefix S --control-prefix C \
+    --shuffle --separate --seed 44 --output test_full/ids
 
-# Follow-up visit 2 for SiteD (which has an IDS file from --shuffle above)
+# Follow-up visit 2 for SiteD (which has per-site IDS files from --shuffle above)
 python idgenerator.py followup --study TestStudy --center 01 \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
     --visit 2 --input-dir test_full/ids --output test_full/ids
 ```
 
-After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail. Extended files are renamed `.old` and kept alongside the current version.
+Each wave produces a `_ALL_` combined file. After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail including the seed. Extended files are renamed `.old`.
 
 ---
 

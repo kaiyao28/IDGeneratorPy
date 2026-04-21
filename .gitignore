@@ -2,4 +2,3 @@
 *.old
 __pycache__/
 *.pyc
-test_full/ids/
