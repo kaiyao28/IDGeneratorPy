@@ -94,14 +94,18 @@ python idgenerator.py batch \
     --output ./ids
 ```
 
-This creates four files in `./ids/`:
+This creates two files per site in `./ids/` (one IDP_IDT file per case/control group):
 ```
 {ts}_MyStudy_IDP_IDT_T=SiteA_G=S_N=50_Baseline.txt    ← SiteA cases,    personal data
-{ts}_MyStudy_IDS_IDT_T=SiteA_G=S_N=50_Baseline.txt    ← SiteA cases,    study data
 {ts}_MyStudy_IDP_IDT_T=SiteA_G=C_N=100_Baseline.txt   ← SiteA controls, personal data
-{ts}_MyStudy_IDS_IDT_T=SiteA_G=C_N=100_Baseline.txt   ← SiteA controls, study data
-... (same four files for SiteB)
+... (same two files for SiteB)
 ```
+
+To also generate the row-shuffled study-data file (IDS_IDT), add `--shuffle`:
+```bash
+python idgenerator.py batch ... --shuffle
+```
+With `--shuffle`, four files are produced per site instead of two.
 
 ---
 
@@ -340,14 +344,16 @@ Output columns: `IDS | IDE | IDS128 | IDE128`
 
 All output files are **tab-separated `.txt`** with a single header row, matching the format of the original Windows application exactly.
 
-| File type | Columns |
-|-----------|---------|
-| `IDP_IDT` | `IDP`, `IDP128`, `IDT` |
-| `IDS_IDT` | `IDS`, `IDS128`, `IDT` |
-| Follow-up | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` |
-| External  | `IDS`, `IDE`, `IDS128`, `IDE128` |
+| File type | Columns | When generated |
+|-----------|---------|----------------|
+| `IDP_IDT` | `IDP`, `IDP128`, `IDT` | Always (default) |
+| `IDS_IDT` | `IDS`, `IDS128`, `IDT` | Only with `--shuffle` |
+| Follow-up | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` | `followup` command |
+| External  | `IDS`, `IDE`, `IDS128`, `IDE128` | `external` command |
 
 The `*128` columns contain Code 128 barcode-encoded strings.
+
+By default, only the `IDP_IDT` file is written per sample. Pass `--shuffle` to also produce the `IDS_IDT` file with row order randomised (which breaks positional re-linking of personal and study data).
 
 ---
 
