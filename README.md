@@ -12,9 +12,11 @@ Each subject receives three linked IDs generated from separate random pools:
 
 | ID | Pool range (5-digit example) | Purpose |
 |----|------------------------------|---------|
-| **IDP** (Principal) | 10 000 – 39 999 | Unblinded — kept by the principal investigator |
-| **IDS** (Scrambled) | 40 000 – 69 999 | Sent to the lab — row order is shuffled to break the IDP↔IDS link |
-| **IDT** (Tracking) | 70 000 – 99 999 | Shared between IDP and IDS files as the re-linkage key |
+| **IDP** (Personal data) | 10 000 – 39 999 | Links to personally identifiable information (name, address, date of birth). Restricted to recruiting and study personnel only. Visit digit is always `0`. |
+| **IDS** (Study data) | 40 000 – 69 999 | Links to scientific study data. Used by study analysts. Row order is randomised in the IDS_IDT file to prevent re-association by file position. |
+| **IDT** (Temporary) | 70 000 – 99 999 | Temporary linkage key between IDP and IDS. Appears in both files. Can be deleted after the study for full anonymisation of the IDS file. |
+
+> **Note on IDT:** Because ID-T is the only link between personal and study data, deleting the ID-T column (and the mapping table) from the IDS file is sufficient to render it anonymous. This is a core feature of the design per Olden et al. 2016.
 
 IDs are assembled from configurable **building blocks** (`--blocks`):
 
@@ -26,6 +28,8 @@ IDs are assembled from configurable **building blocks** (`--blocks`):
 | `N` | Unique random number |
 | `V` | Visit number (`0` for IDP, `1` for IDS/IDT at baseline) |
 | `X` | Check digit |
+
+> **Re-identification caution (per Olden et al. 2016):** Embedding participant characteristics (such as case/control status via `G`) directly in the ID should be done with care. If the code mapping is known, the ID itself can reveal group membership and undermine blinding. Use the `G` block only when group membership is not sensitive in your study design.
 
 Example with `--blocks CTGNVX`, center `01`, sample `Sample001`, group `S`, N=`12345`, visit `1`, check digit `4`:
 

@@ -74,9 +74,15 @@ Checksum algorithms (--checksum):
   Gumm_1986       Gumm 1986 algorithm
   Damm_2004       Damm 2004 algorithm (default)
 
+ID types (Olden et al. 2016, BMC Med Res Methodol):
+  IDP = Personal data identifier  — links to name/address/DOB; restricted to study personnel; visit=0
+  IDS = Study data identifier     — links to scientific data; for study analysts; row order randomised
+  IDT = Temporary identifier      — temporary linkage key between IDP and IDS; can be deleted for anonymisation
+  IDE = External identifier       — k+1 digits; links an external project to existing IDS records
+
 Output files (tab-separated .txt):
   {ts}_{study}_IDP_IDT_T={track}_N={n}_Baseline.txt  — IDP/IDT pairs, unshuffled
-  {ts}_{study}_IDS_IDT_T={track}_N={n}_Baseline.txt  — IDS/IDT pairs, row-shuffled
+  {ts}_{study}_IDS_IDT_T={track}_N={n}_Baseline.txt  — IDS/IDT pairs, row-shuffled (prevents position-based re-linkage)
 """
 
 import argparse
