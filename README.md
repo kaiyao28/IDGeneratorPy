@@ -6,7 +6,7 @@ Each participant receives three linked IDs — a personal ID (IDP), a study data
 
 The script is designed around two common scenarios:
 
-**Starting a new study** — you have a planned sample size and want to assign IDs as participants are recruited. IDs are generated in batches from a simple input sheet. When new recruits join in a later wave, you run the same command with the additional counts and the script extends existing records automatically, guaranteeing no ID is ever reused.
+**Starting a new study** — you have a planned sample size and want to assign IDs as participants are recruited. IDs are generated in batches, either by specifying counts directly on the command line or from an input sheet. When new recruits join in a later wave, you run the same command with the additional counts and the script extends existing records automatically, guaranteeing no ID is ever reused.
 
 **Assigning IDs to an existing cohort** — participants are already enrolled and you need uniform trackable IDs for data linkage. You provide the current cohort size once and generate IDs for everyone. New recruits added later are handled the same way as the scenario above.
 
@@ -45,7 +45,7 @@ python3 idgenerator.py init \
     --output  ./ids
 ```
 
-`--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTGNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
+`--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
 
 **Choosing `--blocks`** — each letter is a segment that is concatenated in order to form every ID:
 
@@ -203,7 +203,7 @@ ids/
     YYYYMMDD_MyStudy_IDS_IDSV2_T=SiteA_…_V=2.txt ← per-site files
 ```
 
-Each output file has columns: `IDS | IDSV2 | IDS128 | IDSV2128` — the baseline and visit IDs side by side with their barcodes.
+Per-site files have columns `IDS | IDSV2 | IDS128 | IDSV2128` — baseline and visit IDs side by side with their barcodes, for tube label printing. The master ALL file has `IDS | IDSV2 | Track | Group` — no barcode columns, clean for Excel/R analysis.
 
 To generate a different visit number without changing `study.cfg`:
 

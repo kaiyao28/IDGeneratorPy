@@ -25,7 +25,7 @@ IDs are assembled from a sequence of named building blocks:
 | Block | Contents | When to include |
 |-------|----------|-----------------|
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
-| `T` | Track / sample name | Multiple sample types, or `batch` mode (SampleName column) |
+| `T` | Track / sample name | Multiple sample types; the value comes from the SampleName column (`--input-file`) or `--track` (`--samplesize`) |
 | `G` | Group prefix — case (`S`) or control (`C`) | `batch` mode with case/control distinction |
 | `N` | Unique random number | Always |
 | `V` | Visit number (IDP=0, IDS=1, follow-ups=n) | Longitudinal studies |
@@ -95,9 +95,27 @@ python3 idgenerator.py init \
 
 ---
 
-### `batch` — generate IDs from a sample sheet
+### `batch` — generate IDs from inline counts or a sample sheet
 
-The main command. Reads a sample sheet and generates one IDP and one IDS file per site × group.
+The main command. Generates one IDP and one IDS file per site × group. Accepts either inline counts on the command line or a sample sheet file.
+
+**Inline mode** — no input file needed:
+
+```bash
+# Single group (no case/control distinction, --blocks without G):
+python3 idgenerator.py batch \
+    --samplesize 5000 \
+    --output ./ids
+
+# Case/control groups (--blocks with G):
+python3 idgenerator.py batch \
+    --samplesize 50 80 \
+    --output ./ids
+```
+
+`--samplesize` takes one value when `G` is absent from `--blocks`, two values (NCases NControls) when `G` is present. The track name defaults to the study name; override with `--track MyCohort`.
+
+**Sheet mode** — specify counts in a file:
 
 ```bash
 python3 idgenerator.py batch \
@@ -121,6 +139,8 @@ Column names are flexible (case-insensitive). Accepted aliases:
 
 | Flag | Effect |
 |------|--------|
+| `--samplesize <N>` or `<N M>` | Inline counts — alternative to `--input-file`. |
+| `--track <name>` | Track/cohort name when using `--samplesize` (default: study name). |
 | `--fresh` | Treat every row as new — do not extend any existing baseline. |
 | `--shuffle` | Randomise row order in per-site IDS files. Breaks positional re-identification if the file is extracted from its context. Unshuffled by default. |
 | `--seed <int>` | Fix the random seed for reproducible output. Recorded in `LogFile.txt`. |
@@ -128,11 +148,11 @@ Column names are flexible (case-insensitive). Accepted aliases:
 
 **Auto-extend behaviour (default):**
 
-For each row in the sheet, `batch` checks whether a baseline already exists for that site + group:
+For each site + group, `batch` checks whether a baseline already exists:
 - If found → extend (preserve existing IDs, append new ones, rename old file to `.old`)
 - If not found → create fresh
 
-The counts in the sheet are always **additional** subjects. Use `--fresh` to override this and force all rows to be created new.
+The counts are always **additional** subjects. Use `--fresh` to override this and force all rows to be created new.
 
 **Output layout:**
 
@@ -196,7 +216,7 @@ Columns ALL: `IDS | IDSVn | Track | Group`
 
 ### `extend` — add subjects to an existing single-track baseline
 
-Alternative to `batch --extend` for single-track (`baseline`) output.
+Explicit extend command for single-track (`baseline`) output. For multi-site studies, use `batch` instead — it auto-detects which sites need extending.
 
 ```bash
 python3 idgenerator.py extend \
