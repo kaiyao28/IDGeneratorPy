@@ -654,6 +654,134 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F1b. MULTI-TRACK BASELINE  (one row per participant, one column per track)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_multitrack_baseline(study, center, track_names, sample_count,
+                                  digits, blocks, checksum_name, output_dir):
+    """
+    Generate IDs for N participants across multiple data tracks.
+
+    Every participant receives one IDT (linkage key) and one IDP per track.
+    All tracks share the same N — if a participant is missing data for one
+    track they still hold an ID for it.
+
+    Output columns: IDT | IDP_Track1 | IDP_Track2 | ...
+    One row per participant, one file. No IDS needed for anonymised cohorts.
+    """
+    checksum_fn = CHECKSUMS[checksum_name]
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    total_idp = sample_count * len(track_names)
+    max_possible = _max_pool_size(digits)
+    if total_idp > max_possible:
+        _log(f"ERROR: {total_idp} IDP draws needed ({sample_count} × {len(track_names)} tracks); "
+             f"max for {digits} digits is {max_possible}.")
+        return False
+
+    lo_idp, hi_idp, _, _, lo_idt, hi_idt = _id_pools(digits)
+    _log(f"Tracks       : {', '.join(track_names)}")
+    _log(f"Participants : {sample_count}")
+    _log(f"ID-P pool    : {lo_idp} – {hi_idp}")
+    _log(f"ID-T pool    : {lo_idt} – {hi_idt}")
+
+    idt_nums = _unique_randoms(lo_idt, hi_idt, sample_count, set())
+    idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn) for n in idt_nums]
+
+    used_idp = set()
+    idp_by_track = {}
+    for t in track_names:
+        nums = _unique_randoms(lo_idp, hi_idp, sample_count, used_idp)
+        used_idp.update(nums)
+        idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in nums]
+
+    ts = timestamp()
+    track_tag = "+".join(track_names)
+    out_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={sample_count}_Baseline.txt"
+    header = ["IDT"] + [f"IDP_{t}" for t in track_names]
+    rows   = [[idt_ids[i]] + [idp_by_track[t][i] for t in track_names]
+              for i in range(sample_count)]
+    _write_tsv(out_file, header, rows)
+    _log(f"  Written : {out_file.name}")
+    _log("Done.")
+    return True
+
+
+def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_name,
+                                input_dir, output_dir):
+    """
+    Extend a multi-track baseline with add_n new participants.
+    Track names and existing N are read from the existing file automatically.
+    All tracks are extended by the same count.
+    """
+    checksum_fn = CHECKSUMS[checksum_name]
+    inp = Path(input_dir)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    candidates = sorted(
+        f for sfx in ("Baseline", "Extended")
+        for f in inp.glob(f"*{study}_IDP_T=*_{sfx}.txt")
+        if "+" in f.stem
+    )
+    if not candidates:
+        _log(f"ERROR: No multi-track baseline found for study '{study}' in {inp}")
+        return False
+    existing_file = candidates[-1]
+
+    with open(existing_file, encoding="utf-8") as f:
+        reader = csv.reader(f, delimiter="\t")
+        header = next(reader)
+        existing_rows = [r for r in reader if r]
+
+    track_names = [h[4:] for h in header if h.startswith("IDP_")]
+    existing_n  = len(existing_rows)
+    total_n     = existing_n + add_n
+
+    _log(f"File         : {existing_file.name}")
+    _log(f"Tracks       : {', '.join(track_names)}")
+    _log(f"Extending    : {existing_n} → {total_n}")
+
+    lo_idp, hi_idp, _, _, lo_idt, hi_idt = _id_pools(digits)
+
+    # Extract existing numbers to avoid collisions
+    pos_idt = field_start(blocks, "N", len(center), 0, digits)
+    used_idt = set()
+    used_idp = set()
+    for row in existing_rows:
+        if pos_idt >= 0:
+            used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
+        for i, t in enumerate(track_names):
+            pos_idp = field_start(blocks, "N", len(center), len(t), digits)
+            if pos_idp >= 0:
+                used_idp.add(int(row[i + 1][pos_idp:pos_idp + digits]))
+
+    new_idt_nums = _unique_randoms(lo_idt, hi_idt, add_n, used_idt)
+    new_idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn) for n in new_idt_nums]
+
+    new_used = set(used_idp)
+    new_idp_by_track = {}
+    for t in track_names:
+        nums = _unique_randoms(lo_idp, hi_idp, add_n, new_used)
+        new_used.update(nums)
+        new_idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in nums]
+
+    new_rows = [[new_idt_ids[i]] + [new_idp_by_track[t][i] for t in track_names]
+                for i in range(add_n)]
+    all_rows = existing_rows + new_rows
+
+    ts = timestamp()
+    track_tag = "+".join(track_names)
+    new_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={total_n}_Extended.txt"
+    _write_tsv(new_file, header, all_rows)
+    existing_file.rename(existing_file.with_suffix(".old"))
+    _log(f"  Written : {new_file.name}")
+    _log("Done.")
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # BATCH BASELINE  (sample sheet with cases + controls)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -776,6 +904,19 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
     _write_tsv(master_ids, ["IDS", "IDT", "Track", "Group"], all_ids_rows)
 
     return master_idp, master_ids
+
+
+def _find_multitrack_site_file(study: str, site_name: str, track_tag: str,
+                               search_dir: Path):
+    """Return the most recent per-site multi-track file, or None if not found."""
+    candidates = []
+    for d in [search_dir, search_dir / "per_site"]:
+        if d.exists():
+            for sfx in ("Baseline", "Extended"):
+                candidates += list(d.glob(
+                    f"*{study}_IDP_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
+    candidates.sort()
+    return candidates[-1] if candidates else None
 
 
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
@@ -964,6 +1105,148 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     return True
 
 
+def _generate_batch_multitrack(study, center, samples, track_names, digits, blocks,
+                               checksum_name, output_dir, input_dir=None):
+    """
+    Batch-generate multi-track IDs from a sample sheet.
+
+    samples    : list of (site_name, n_participants, _) — NControls ignored
+    track_names: list of track name strings e.g. ['Genetics', 'Phenotype']
+
+    Every participant at a site receives one IDT and one IDP per track.
+    If an existing per-site file is found it is extended; otherwise a fresh file is created.
+    A master ALL file covering all sites is rebuilt after each run.
+
+    Per-site output  (per_site/): IDT | IDP_T1 | IDP_T2 | ...
+    Master ALL (output_dir/)    : Site | IDT | IDP_T1 | IDP_T2 | ...
+    """
+    checksum_fn = CHECKSUMS[checksum_name]
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    inp = Path(input_dir) if input_dir else out
+    per_site_out = out / "per_site"
+    per_site_out.mkdir(parents=True, exist_ok=True)
+
+    lo_idp, hi_idp, _, _, lo_idt, hi_idt = _id_pools(digits)
+    track_tag = "+".join(track_names)
+
+    # ── Planning phase: classify sites, collect existing numbers ─────────────
+    plan = []
+    used_idt: set = set()
+    used_idp: set = set()
+
+    for site_name, n_participants, _ in samples:
+        if n_participants == 0:
+            continue
+        existing_file = _find_multitrack_site_file(study, site_name, track_tag, inp)
+        if existing_file:
+            with open(existing_file, encoding="utf-8") as f:
+                reader = csv.reader(f, delimiter="\t")
+                _hdr = next(reader)
+                existing_rows = [r for r in reader if r]
+            existing_n = len(existing_rows)
+            pos_idt = field_start(blocks, "N", len(center), 0, digits)
+            for row in existing_rows:
+                if pos_idt >= 0 and row[0]:
+                    used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
+            for i, t in enumerate(track_names):
+                pos_idp = field_start(blocks, "N", len(center), len(t), digits)
+                for row in existing_rows:
+                    if pos_idp >= 0 and len(row) > i + 1 and row[i + 1]:
+                        used_idp.add(int(row[i + 1][pos_idp:pos_idp + digits]))
+            plan.append(dict(site_name=site_name, add_n=n_participants, mode="extend",
+                             existing_n=existing_n, existing_rows=existing_rows,
+                             existing_file=existing_file))
+        else:
+            plan.append(dict(site_name=site_name, add_n=n_participants, mode="new"))
+
+    if not plan:
+        _log("ERROR: No valid sites found in input.")
+        return False
+
+    total_new_idt = sum(e["add_n"] for e in plan)
+    total_new_idp = total_new_idt * len(track_names)
+
+    _log(f"Tracks       : {', '.join(track_names)}")
+    _log(f"Sites        : {len(plan)}")
+    _log(f"\n{'Site':<20} {'Action':<10} {'Add':>6} {'Existing':>9}")
+    _log("-" * 52)
+    for e in plan:
+        ex_str = str(e.get("existing_n", "—")).rjust(9)
+        _log(f"  {e['site_name']:<18} {e['mode']:<10} {e['add_n']:>6} {ex_str}")
+    _log("-" * 52)
+    _log(f"  New IDT to generate : {total_new_idt}")
+    _log(f"  New IDP to generate : {total_new_idp}  ({len(track_names)} tracks × {total_new_idt})")
+    _log()
+    _log(f"ID-P pool : {lo_idp} – {hi_idp}")
+    _log(f"ID-T pool : {lo_idt} – {hi_idt}\n")
+
+    # ── Draw all new numbers globally in one pass ─────────────────────────────
+    new_idt_pool = _unique_randoms(lo_idt, hi_idt, total_new_idt, used_idt)
+    new_idp_pool = _unique_randoms(lo_idp, hi_idp, total_new_idp, used_idp)
+
+    ts = timestamp()
+    idt_pos = 0
+    idp_pos = 0
+    file_header = ["IDT"] + [f"IDP_{t}" for t in track_names]
+
+    for e in plan:
+        site_name = e["site_name"]
+        add_n     = e["add_n"]
+        mode      = e["mode"]
+
+        idt_slice = new_idt_pool[idt_pos:idt_pos + add_n]
+        idt_ids   = [build_id(blocks, center, "", n, 1, checksum_fn) for n in idt_slice]
+        idt_pos  += add_n
+
+        idp_by_track: dict = {}
+        for t in track_names:
+            idp_slice       = new_idp_pool[idp_pos:idp_pos + add_n]
+            idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in idp_slice]
+            idp_pos        += add_n
+
+        new_rows = [[idt_ids[i]] + [idp_by_track[t][i] for t in track_names]
+                    for i in range(add_n)]
+
+        if mode == "extend":
+            all_file_rows = e["existing_rows"] + new_rows
+            total_n       = e["existing_n"] + add_n
+            suffix        = "Extended"
+            action        = f"extended {e['existing_n']} → {total_n}"
+            e["existing_file"].rename(e["existing_file"].with_suffix(".old"))
+        else:
+            all_file_rows = new_rows
+            total_n       = add_n
+            suffix        = "Baseline"
+            action        = f"{add_n} new"
+
+        per_site_file = per_site_out / (
+            f"{ts}_{study}_IDP_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
+        )
+        _write_tsv(per_site_file, file_header, all_file_rows)
+        _log(f"  [{site_name}] {action}  →  per_site/{per_site_file.name}")
+
+    # ── Rebuild master ALL by re-reading every current per-site file ──────────
+    all_master_rows = []
+    for f in sorted(per_site_out.glob(f"*{study}_IDP_T={track_tag}_SITE=*.txt")):
+        site = get_param_from_filename(str(f), "SITE")
+        with open(f, encoding="utf-8") as fh:
+            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+        for line in lines[1:]:
+            cols = line.split("\t")
+            all_master_rows.append([site] + cols)
+
+    for old in sorted(out.glob(f"*_{study}_IDP_T={track_tag}_ALL_*.txt")):
+        old.rename(old.with_suffix(".old"))
+
+    master_header = ["Site", "IDT"] + [f"IDP_{t}" for t in track_names]
+    master_file   = out / f"{ts}_{study}_IDP_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
+    _write_tsv(master_file, master_header, all_master_rows)
+    _log(f"  Master ALL : {master_file.name}")
+    _log("Done.")
+    return True
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # F2. GENERATE FOLLOW-UPs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -980,6 +1263,10 @@ def generate_followups(study, visit, input_dir, output_dir):
     This makes the relationship explicit and prevents any confusion with baseline IDs.
     No new random numbers are drawn — all visit IDs are derived from existing baselines.
     """
+    if visit < 2:
+        _log("ERROR: --visit must be 2 or higher. Visit 1 is reserved for baseline IDS.")
+        return False
+
     inp = Path(input_dir)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -1297,6 +1584,11 @@ def main():
     p.add_argument("--checksum", default="Damm_2004", choices=list(CHECKSUMS.keys()))
     p.add_argument("--case-prefix",    default="S")
     p.add_argument("--control-prefix", default="C")
+    p.add_argument("--tracks", default=None,
+                   help="Default data tracks for multi-track batch runs "
+                        "(e.g. 'Genetics,Phenotype'). Saved to study.cfg and picked up "
+                        "automatically by every subsequent batch call. Override on the CLI "
+                        "at any time to add new tracks.")
     p.add_argument("--visit", type=int, default=2,
                    help="Follow-up visit number to use for all followup runs (default: 2)")
     p.add_argument("--output",   default=".", help="Study output directory")
@@ -1305,7 +1597,13 @@ def main():
     p = sub.add_parser("baseline", parents=[shared],
                        help="Generate a fresh baseline for named tracks")
     p.add_argument("--tracks", required=True,
-                   help="Track names and counts, e.g. 'TrackA:100,TrackB:200'")
+                   help="Track names. Multi-track mode (with --samplesize): comma-separated names "
+                        "e.g. 'Genetics,Phenotype,Imaging'. "
+                        "Single-track mode (without --samplesize): name:count pairs "
+                        "e.g. 'TrackA:100,TrackB:200'.")
+    p.add_argument("--samplesize", type=int, default=None,
+                   help="Participant count for multi-track mode. Every participant gets an ID for "
+                        "every track. Omit to use the old name:count format.")
 
     # ── batch ─────────────────────────────────────────────────────────────────
     p = sub.add_parser("batch", parents=[shared],
@@ -1313,6 +1611,11 @@ def main():
     p.add_argument("--input-file", default=None,
                    help="Sample sheet file (.txt .csv .tsv .xlsx .xls). "
                         "Columns: SampleName, NCases, NControls")
+    p.add_argument("--tracks", default=None,
+                   help="Comma-separated data track names for multi-track mode "
+                        "(e.g. 'Genetics,Phenotype'). The sheet defines sites and counts; "
+                        "--tracks defines what IDP columns each participant receives. "
+                        "Output per site: IDT | IDP_T1 | IDP_T2 | ...")
     p.add_argument("--samplesize", nargs="+", type=int, default=None,
                    help="Inline counts instead of an input file. "
                         "One value when --blocks has no G (e.g. --samplesize 5000). "
@@ -1348,10 +1651,13 @@ def main():
     # ── extend ───────────────────────────────────────────────────────────────
     p = sub.add_parser("extend", parents=[shared],
                        help="Add new subjects to an existing baseline")
-    p.add_argument("--tracks", required=True,
-                   help="Existing tracks and counts, e.g. 'TrackA:100,TrackB:200'")
+    p.add_argument("--tracks", default=None,
+                   help="Single-track mode only: existing tracks and counts, "
+                        "e.g. 'TrackA:100,TrackB:200'. Omit for multi-track mode "
+                        "(tracks are read from the existing file automatically).")
     p.add_argument("--new-samples", required=True,
-                   help="New subjects per track, e.g. 'TrackA:20,TrackB:30'")
+                   help="Multi-track mode: integer count of new participants to add. "
+                        "Single-track mode: per-track counts, e.g. 'TrackA:20,TrackB:30'.")
     p.add_argument("--input-dir", default=None,
                    help="Directory containing the existing baseline files (default: .)")
 
@@ -1390,6 +1696,8 @@ def main():
             "visit":           args.visit,
             "output":          args.output,
         }
+        if getattr(args, "tracks", None):
+            cfg_data["tracks"] = args.tracks
         _save_config(cfg_data, args.output)
         if cfg:
             print("Previous config overwritten.")
@@ -1411,39 +1719,71 @@ def main():
     _log(f"{'='*60}")
 
     if args.command == "baseline":
-        ok = generate_baseline(args.study, args.center, _parse_tracks(args.tracks),
-                               args.digits, args.blocks, args.checksum, args.output,
-                               shuffle=args.shuffle)
+        if args.samplesize is not None:
+            track_names = [t.strip() for t in args.tracks.split(",")]
+            ok = generate_multitrack_baseline(
+                args.study, args.center, track_names, args.samplesize,
+                args.digits, args.blocks, args.checksum, args.output)
+        else:
+            ok = generate_baseline(args.study, args.center, _parse_tracks(args.tracks),
+                                   args.digits, args.blocks, args.checksum, args.output,
+                                   shuffle=args.shuffle)
 
     elif args.command == "batch":
         if args.input_file is None and args.samplesize is None:
             parser.error("batch requires either --input-file or --samplesize")
 
-        inline_samples = None
-        if args.samplesize is not None:
-            track_name = args.track or args.study
-            has_g = "G" in (args.blocks or "")
-            ss = args.samplesize
-            if has_g:
-                if len(ss) != 2:
-                    _log("ERROR: --blocks contains G (case/control mode); "
-                         "--samplesize requires two values: NCases NControls")
-                    sys.exit(1)
-                inline_samples = [(track_name, ss[0], ss[1])]
-            else:
-                if len(ss) != 1:
-                    _log("ERROR: --blocks does not contain G (single-group mode); "
-                         "--samplesize requires one value: N")
-                    sys.exit(1)
-                inline_samples = [(track_name, ss[0], 0)]
+        # Auto-load tracks from study.cfg when not supplied on the command line
+        if not getattr(args, "tracks", None) and cfg.get("tracks"):
+            args.tracks = cfg["tracks"]
 
-        ok = generate_batch(args.study, args.center, args.input_file,
-                            args.digits, args.blocks, args.checksum,
-                            args.case_prefix, args.control_prefix, args.output,
-                            extend_mode=not args.fresh,
-                            input_dir=args.input_dir or args.output,
-                            shuffle=args.shuffle,
-                            samples=inline_samples)
+        if args.tracks:
+            # ── Multi-track mode: --tracks T1,T2 ──────────────────────────────
+            track_names = [t.strip() for t in args.tracks.split(",")]
+            if args.samplesize is not None:
+                site_name = args.track or args.study
+                ss = args.samplesize
+                if len(ss) != 1:
+                    _log("ERROR: --tracks with --samplesize expects a single participant count.")
+                    sys.exit(1)
+                mt_samples = [(site_name, ss[0], 0)]
+            else:
+                try:
+                    mt_samples = read_sample_sheet(args.input_file)
+                except (ValueError, ImportError) as e:
+                    _log(f"ERROR: {e}")
+                    sys.exit(1)
+            ok = _generate_batch_multitrack(
+                args.study, args.center, mt_samples, track_names,
+                args.digits, args.blocks, args.checksum,
+                args.output, args.input_dir or args.output)
+        else:
+            # ── Standard batch mode: case/control per site ────────────────────
+            inline_samples = None
+            if args.samplesize is not None:
+                track_name = args.track or args.study
+                has_g = "G" in (args.blocks or "")
+                ss = args.samplesize
+                if has_g:
+                    if len(ss) != 2:
+                        _log("ERROR: --blocks contains G (case/control mode); "
+                             "--samplesize requires two values: NCases NControls")
+                        sys.exit(1)
+                    inline_samples = [(track_name, ss[0], ss[1])]
+                else:
+                    if len(ss) != 1:
+                        _log("ERROR: --blocks does not contain G (single-group mode); "
+                             "--samplesize requires one value: N")
+                        sys.exit(1)
+                    inline_samples = [(track_name, ss[0], 0)]
+
+            ok = generate_batch(args.study, args.center, args.input_file,
+                                args.digits, args.blocks, args.checksum,
+                                args.case_prefix, args.control_prefix, args.output,
+                                extend_mode=not args.fresh,
+                                input_dir=args.input_dir or args.output,
+                                shuffle=args.shuffle,
+                                samples=inline_samples)
 
     elif args.command == "followup":
         ok = generate_followups(args.study, args.visit,
@@ -1453,12 +1793,24 @@ def main():
         ok = add_track(args.study, args.track, args.output, shuffle=args.shuffle)
 
     elif args.command == "extend":
-        tracks      = _parse_tracks(args.tracks)
-        new_samples = dict(_parse_tracks(args.new_samples))
-        ok = extend_baseline(args.study, args.center, tracks, new_samples,
-                             args.digits, args.blocks, args.checksum,
-                             args.input_dir or args.output, args.output,
-                             shuffle=args.shuffle)
+        if args.tracks is None:
+            # Multi-track mode: --new-samples is a plain integer count
+            try:
+                add_n = int(args.new_samples)
+            except ValueError:
+                _log("ERROR: Multi-track extend requires --new-samples to be an integer count.")
+                sys.exit(1)
+            ok = extend_multitrack_baseline(
+                args.study, args.center, add_n,
+                args.digits, args.blocks, args.checksum,
+                args.input_dir or args.output, args.output)
+        else:
+            tracks      = _parse_tracks(args.tracks)
+            new_samples = dict(_parse_tracks(args.new_samples))
+            ok = extend_baseline(args.study, args.center, tracks, new_samples,
+                                 args.digits, args.blocks, args.checksum,
+                                 args.input_dir or args.output, args.output,
+                                 shuffle=args.shuffle)
 
     elif args.command == "external":
         ok = create_external_ids(args.study, args.center, args.ext_project,

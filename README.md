@@ -47,6 +47,18 @@ python3 idgenerator.py init \
 
 `--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
 
+If your cohort collects multiple data types (genetics, phenotyping, imaging…), declare the tracks here too:
+
+```bash
+python3 idgenerator.py init \
+    --study  MyStudy \
+    --center 01 \
+    --tracks Genetics,Phenotype \
+    --output ./ids
+```
+
+Every subsequent `batch` call reads the track list from `study.cfg` automatically. Override `--tracks` on the command line at any time if a new data type is added later.
+
 **Choosing `--blocks`** — each letter is a segment that is concatenated in order to form every ID:
 
 | Letter | Segment | Example |
@@ -136,63 +148,98 @@ Old per-site files are renamed `.old`. The master files are rebuilt to include t
 
 ---
 
-## Scenario 2 — Multiple data types in an anonymised cohort
+## Scenario 2 — Multi-track anonymised cohort across sites
 
-Use this when your cohort is already anonymised and you need separate, independent ID sets for different data types — for example genetic samples, phenotype questionnaires, and imaging. Because personal identity is not being tracked, no IDS/IDT separation is needed; you just need guaranteed-unique, unlinkable IDs per data type.
+Use this when participants are already anonymised and you need separate, independent ID sets for different data types — genetics, phenotyping, imaging, and so on. Personal identity is not tracked, so only IDP (personal data ID) is generated, not IDS. The IDT linkage key connects the data types; delete it once labelling is complete to fully sever any cross-track link.
 
-Each data type is a **track**. Tracks draw from the same random number pools but produce completely independent ID sets. Without the IDT linkage key, IDs from different tracks cannot be matched to each other, even if someone has access to all the files.
+Each data type is a **track**. Tracks are declared once at `init` and saved to `study.cfg`. The input sheet defines sites and participant counts; the tracks define what ID columns every participant at every site receives.
 
-This was the intended use of the `T` (Track) building block in the original programme.
-
-**Generate IDs for three data types in one command:**
+**Step 1 — save study parameters and declare tracks:**
 
 ```bash
-python3 idgenerator.py baseline \
-    --tracks "Genetics:500,Phenotype:500,Imaging:300" \
-    --output ./ids
+python3 idgenerator.py init \
+    --study    AnonymCohort \
+    --center   01 \
+    --blocks   CTNVX \
+    --tracks   Genetics,Phenotype \
+    --output   ./ids
 ```
 
-This creates one IDP file per track:
+`--tracks` is stored in `study.cfg`. You do not need to repeat it on every `batch` call.
+
+**Step 2 — prepare the site sheet (`wave1.txt`):**
+
+```
+SampleName   NCases   NControls
+SiteA        200      0
+SiteB        150      75
+```
+
+Each row is a site. `NCases` is the participant count for that site. `NControls` can be used if a site has a case/control split; set it to `0` for sites with no distinction.
+
+**Step 3 — generate IDs for Wave 1:**
+
+```bash
+python3 idgenerator.py batch \
+    --input-file wave1.txt \
+    --output ./ids \
+    --seed 10
+```
+
+No `--tracks` flag needed — it is loaded from `study.cfg`. Every participant at every site receives one IDT and one IDP per track.
+
+Output:
 
 ```
 ids/
-  YYYYMMDD_MyStudy_IDP_IDT_ALL_N=1300.txt
+  YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_ALL_N=425.txt   ← all sites combined
   per_site/
-    YYYYMMDD_MyStudy_IDP_IDT_T=Genetics_N=500_Baseline.txt
-    YYYYMMDD_MyStudy_IDP_IDT_T=Phenotype_N=500_Baseline.txt
-    YYYYMMDD_MyStudy_IDP_IDT_T=Imaging_N=300_Baseline.txt
+    YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_SITE=SiteA_N=200_Baseline.txt
+    YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_SITE=SiteB_N=225_Baseline.txt
 ```
 
-Each file has columns `IDP | IDP128 | IDT`. The IDT column can be deleted once labelling is complete to sever any remaining cross-track linkage.
+Per-site columns: `IDT | IDP_Genetics | IDP_Phenotype`  
+Master ALL columns: `Site | IDT | IDP_Genetics | IDP_Phenotype`
 
-**Adding new participants in a later wave:**
+**Adding participants in a later wave:**
+
+Provide a new sheet with the *additional* counts for each site. The script detects existing per-site files and appends new rows — old files are renamed `.old` and the master ALL is rebuilt:
 
 ```bash
-python3 idgenerator.py extend \
-    --tracks       "Genetics:500,Phenotype:500,Imaging:300" \
-    --new-samples  "Genetics:100,Phenotype:100" \
-    --output       ./ids
+python3 idgenerator.py batch \
+    --input-file wave2.txt \
+    --output ./ids \
+    --seed 11
 ```
 
-Only the tracks listed in `--new-samples` are extended. New IDs are guaranteed unique against all previously generated numbers.
+**Adding a new track later:**
 
-**Multi-site version of the same scenario:**
-
-If the same data types are collected across multiple sites, use `batch` with a sample sheet where each row is a site × data-type combination:
-
-```
-SampleName          NCases    NControls
-Genetics_SiteA      200       0
-Genetics_SiteB      150       0
-Phenotype_SiteA     200       0
-Phenotype_SiteB     150       0
-```
+Re-run `init` with the updated track list to record it in `study.cfg`. The next `batch` wave assigns IDPs for all three tracks to new participants. Existing two-track files are left untouched; the new files sit alongside them and link back via IDT:
 
 ```bash
-python3 idgenerator.py batch --input-file tracks.txt --output ./ids
+python3 idgenerator.py init \
+    --study AnonymCohort --center 01 --blocks CTNVX \
+    --tracks Genetics,Phenotype,Imaging \
+    --output ./ids
+
+python3 idgenerator.py batch \
+    --input-file wave3.txt \
+    --output ./ids \
+    --seed 12
 ```
 
-Set `NControls` to `0` for any track that has no case/control distinction — those rows are skipped automatically.
+**Single-site variant:**
+
+For a cohort at one site, skip the sheet and pass the count directly:
+
+```bash
+python3 idgenerator.py baseline \
+    --samplesize 500 \
+    --tracks Genetics,Phenotype \
+    --output ./ids
+```
+
+Output: a single file with columns `IDT | IDP_Genetics | IDP_Phenotype`. Extend later with `extend --new-samples 100`.
 
 ---
 
@@ -244,8 +291,9 @@ Visit numbers can be any integer ≥ 2. There is no upper limit.
 | `IDP_IDT_ALL_N=….txt` | `ids/` | Your team — personal data + temp keys. Keep confidential. |
 | `IDS_IDT_ALL_N=….txt` | `ids/` | Analysts — study data + temp keys. |
 | `IDS_IDSV{n}_ALL_…txt` | `ids/` | Analysts — baseline IDS paired with follow-up IDS. |
-| Per-site `IDP_IDT_T=…` | `ids/per_site/` | Reference copy per site/group. |
-| Per-site `IDS_IDT_T=…` | `ids/per_site/` | Reference copy per site/group. |
+| `IDP_T=…_ALL_N=….txt` | `ids/` | Multi-track cohort master — Site + IDT + one IDP column per track. |
+| Per-site `IDP_IDT_T=…` | `ids/per_site/` | Reference copy per site/group (standard batch). |
+| Per-site `IDP_T=…_SITE=…` | `ids/per_site/` | Reference copy per site (multi-track batch). |
 | `LogFile.txt` | `ids/` | Full audit trail. |
 
 The `_Baseline` suffix marks files created in the first run for a site; `_Extended` marks files after subjects were added.

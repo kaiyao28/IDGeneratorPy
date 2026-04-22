@@ -175,15 +175,31 @@ The master ALL files are rebuilt after every run, so they always contain all sit
 
 ### `baseline` — generate a fresh baseline for named tracks
 
-Simpler alternative to `batch` when there is no case/control distinction.
+Two modes depending on whether `--samplesize` is provided:
+
+**Multi-track mode** (`--samplesize N --tracks Name1,Name2,...`)
+
+Every participant receives one IDT and one IDP per track. All tracks share the same N — if a participant is missing data for one track they still hold an ID for it. Output is one file with track IDs as columns.
+
+```bash
+python3 idgenerator.py baseline \
+    --samplesize 500 \
+    --tracks     Genetics,Phenotype,Imaging \
+    --output     ./ids
+```
+
+Output file: `YYYYMMDD_{study}_IDP_T=Genetics+Phenotype+Imaging_N=500_Baseline.txt`  
+Columns: `IDT | IDP_Genetics | IDP_Phenotype | IDP_Imaging`
+
+**Single-track mode** (`--tracks "Name:count,..."`, no `--samplesize`)
+
+Generates one IDP/IDS file pair per track, each with its own count. Use when tracks genuinely have different sizes.
 
 ```bash
 python3 idgenerator.py baseline \
     --tracks  "TrackA:100,TrackB:200" \
     --output  ./ids
 ```
-
-`--tracks` format: `"Name1:count1,Name2:count2,..."`
 
 Optional: `--shuffle`, `--seed`
 
@@ -214,9 +230,22 @@ Columns ALL: `IDS | IDSVn | Track | Group`
 
 ---
 
-### `extend` — add subjects to an existing single-track baseline
+### `extend` — add subjects to an existing baseline
 
-Explicit extend command for single-track (`baseline`) output. For multi-site studies, use `batch` instead — it auto-detects which sites need extending.
+Two modes mirroring `baseline`:
+
+**Multi-track mode** (omit `--tracks` — tracks auto-detected from the existing file)
+
+```bash
+python3 idgenerator.py extend \
+    --new-samples 100 \
+    --input-dir   ./ids \
+    --output      ./ids
+```
+
+`--new-samples` is the number of new participants to add. All tracks in the existing file are extended by the same count simultaneously.
+
+**Single-track mode** (provide `--tracks` with current counts)
 
 ```bash
 python3 idgenerator.py extend \
@@ -226,7 +255,9 @@ python3 idgenerator.py extend \
     --output       ./ids
 ```
 
-`--tracks` is the *current* count; `--new-samples` is what to add. Old files are renamed `.old`.
+`--tracks` is the *current* count per track; `--new-samples` is what to add per track.
+
+In both modes old files are renamed `.old`.
 
 ---
 
