@@ -1,0 +1,3 @@
+SampleName	NCases	NControls
+SiteA	5	3
+SiteC	4	2

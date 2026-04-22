@@ -26,11 +26,12 @@ Usage examples
     Sample001    100      200
     Sample002    50       75
 
-  Output files produced per sample:
-    {ts}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_Baseline.txt
-    {ts}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_Baseline.txt
-    {ts}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_Baseline.txt
-    {ts}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_Baseline.txt
+  Output files produced per sample (in per_site/ subfolder):
+    {date}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_Baseline.txt    (first creation)
+    {date}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_Baseline.txt
+    {date}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_Baseline.txt
+    {date}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_Baseline.txt
+    (re-runs that extend existing files produce _Extended.txt instead)
 
 # Generate follow-up visit 2 from baseline files:
   python idgenerator.py followup \\
@@ -81,8 +82,11 @@ ID types (Olden et al. 2016, BMC Med Res Methodol):
   IDE = External identifier       — k+1 digits; links an external project to existing IDS records
 
 Output files (tab-separated .txt):
-  {ts}_{study}_IDP_IDT_T={track}_N={n}_Baseline.txt  — IDP/IDT pairs, unshuffled (always written)
-  {ts}_{study}_IDS_IDT_T={track}_N={n}_Baseline.txt  — IDS/IDT pairs, row-shuffled (written only with --shuffle)
+  {date}_{study}_IDP_IDT_T={track}_N={n}_Baseline.txt   — IDP/IDT pairs, first creation
+  {date}_{study}_IDP_IDT_T={track}_N={n}_Extended.txt   — IDP/IDT pairs, after extending existing
+  {date}_{study}_IDS_IDT_T={track}_N={n}_Baseline.txt   — IDS/IDT pairs (always written; --shuffle controls row order)
+  {date}_{study}_IDP_IDT_ALL_N={n}.txt                  — master IDP combined across all sites
+  {date}_{study}_IDS_IDT_ALL_N={n}.txt                  — master IDS combined across all sites
 """
 
 import argparse
@@ -343,7 +347,7 @@ def field_start(blocks: str, field: str, center_len: int, track_len: int,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime("%Y%m%d")
 
 
 def get_param_from_filename(path: str, param: str) -> str:
@@ -563,13 +567,13 @@ def _build_ids_for_track(blocks, center, track_name, group, idp_nums, ids_nums, 
 
 def _write_baseline_for_track(study, center, track_name, group, track_n,
                                idp_nums, ids_nums, idt_nums,
-                               blocks, checksum_fn, out, ts, *, shuffle=False):
+                               blocks, checksum_fn, out, ts, *,
+                               shuffle=False, suffix="Baseline"):
     """
     Build and write per-track output files.
-    Returns (idp_filepath, ids_filepath_or_None, idp_rows, ids_rows).
-    idp_rows / ids_rows are lists of (id, id128, idt, track, group) for ALL-file accumulation.
-    IDS rows are always returned. Per-site IDS file (with shuffled rows) is only written
-    when shuffle=True.
+    Returns (idp_filepath, ids_filepath, idp_rows, ids_rows).
+    suffix="Baseline" for initial creation, "Extended" when adding to existing.
+    IDS rows are always returned; --shuffle controls row order only.
     """
     idp_ids, ids_ids, idt_ids, idp128, ids128, order = _build_ids_for_track(
         blocks, center, track_name, group, idp_nums, ids_nums, idt_nums,
@@ -577,13 +581,12 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
 
     g_tag = f"_G={group}" if group else ""
 
-    idp_file = out / f"{ts}_{study}_IDP_IDT_T={track_name}{g_tag}_N={track_n}_Baseline.txt"
+    idp_file = out / f"{ts}_{study}_IDP_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.txt"
     _write_tsv(idp_file, ["IDP", "IDP128", "IDT"], zip(idp_ids, idp128, idt_ids))
     idp_rows = list(zip(idp_ids, idp128, idt_ids,
                         [track_name] * track_n, [group] * track_n))
 
-    # IDS per-site file always written; --shuffle controls whether rows are randomised
-    ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_Baseline.txt"
+    ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.txt"
     _write_tsv(ids_file, ["IDS", "IDS128", "IDT"],
                ((ids_ids[i], ids128[i], idt_ids[i]) for i in order))
     ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
@@ -634,7 +637,7 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
             ids_nums[pos:pos + track_n],
             idt_nums[pos:pos + track_n],
             blocks, checksum_fn, out, ts,
-            shuffle=shuffle,
+            shuffle=shuffle, suffix="Baseline",
         )
         all_idp_rows.extend(idp_rows)
         all_ids_rows.extend(ids_rows)
@@ -643,11 +646,11 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
             _log(f"                         {ids_file.name}")
         pos += track_n
 
-    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_n}_Baseline.txt"
+    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_n}.txt"
     _write_tsv(combined_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
     _log(f"  Combined IDP : {combined_idp.name}")
     if all_ids_rows:
-        combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_n}_Baseline.txt"
+        combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_n}.txt"
         _write_tsv(combined_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
         _log(f"  Combined IDS : {combined_ids.name}")
 
@@ -723,8 +726,9 @@ def _find_baseline_pair(study: str, sample_name: str, group: str,
     idp_matches, ids_matches = [], []
     for d in candidate_dirs:
         if d.exists():
-            idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_Baseline.txt"))
-            ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_Baseline.txt"))
+            for sfx in ("Baseline", "Extended"):
+                idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
+                ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
     idp_matches.sort()
     ids_matches.sort()
     if not idp_matches:
@@ -741,8 +745,8 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
     """
     per_site = out / "per_site"
 
-    idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*_Baseline.txt"))
-    ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*_Baseline.txt"))
+    idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*.txt"))
+    ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*.txt"))
 
     all_idp_rows, all_ids_rows = [], []
     for f in idp_files:
@@ -762,15 +766,15 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
             all_ids_rows.append(line.split("\t") + [track, group])
 
     # Retire old master ALL files
-    for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*_Baseline.txt")):
+    for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*.txt")):
         old.rename(old.with_suffix(".old"))
-    for old in sorted(out.glob(f"*_{study}_IDS_IDT_ALL_*_Baseline.txt")):
+    for old in sorted(out.glob(f"*_{study}_IDS_IDT_ALL_*.txt")):
         old.rename(old.with_suffix(".old"))
 
-    master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}_Baseline.txt"
+    master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}.txt"
     _write_tsv(master_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
 
-    master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}_Baseline.txt"
+    master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}.txt"
     _write_tsv(master_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
 
     return master_idp, master_ids
@@ -949,6 +953,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             total_n, all_idp, all_ids, all_idt,
             blocks, checksum_fn, per_site_out, ts,
             shuffle=shuffle,
+            suffix="Extended" if mode == "extend" else "Baseline",
         )
         _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
         if mode == "extend":
@@ -977,11 +982,12 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Search both the main dir and the per_site subfolder (written by --separate)
+    # Search both the main dir and the per_site subfolder
     search_dirs = [inp, inp / "per_site"]
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
-        for f in d.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
+        for sfx in ("Baseline", "Extended")
+        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
         if "_ALL_" not in f.name
     )
     if not baseline_files:
@@ -1094,8 +1100,14 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         add_n    = new_samples.get(track_name, 0)
         total_n  = existing_n + add_n
 
-        idp_files = sorted(inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_Baseline.txt"))
-        ids_files = sorted(inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_Baseline.txt"))
+        idp_files = sorted(
+            f for sfx in ("Baseline", "Extended")
+            for f in inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_{sfx}.txt")
+        )
+        ids_files = sorted(
+            f for sfx in ("Baseline", "Extended")
+            for f in inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_{sfx}.txt")
+        )
 
         if not idp_files:
             _log(f"ERROR: IDP baseline for track '{track_name}' not found in {inp}")
@@ -1161,7 +1173,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             total_n,
             all_idp_nums, all_ids_nums, all_idt_nums,
             blocks, checksum_fn, out, ts,
-            shuffle=shuffle,
+            shuffle=shuffle, suffix="Extended",
         )
 
         if ids_files:
@@ -1200,7 +1212,8 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
     search_dirs = [inp, inp / "per_site"]
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
-        for f in d.glob(f"*{study}_IDS_IDT_*_Baseline.txt")
+        for sfx in ("Baseline", "Extended")
+        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
         if "_ALL_" not in f.name
     )
     if not baseline_files:
