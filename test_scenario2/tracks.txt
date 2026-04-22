@@ -1,0 +1,5 @@
+SampleName	NCases	NControls
+Genetics_SiteA	200	0
+Genetics_SiteB	150	0
+Phenotype_SiteA	200	0
+Phenotype_SiteB	150	0

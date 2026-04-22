@@ -136,41 +136,63 @@ Old per-site files are renamed `.old`. The master files are rebuilt to include t
 
 ---
 
-## Scenario 2 — Multiple sites with different sample sizes
+## Scenario 2 — Multiple data types in an anonymised cohort
 
-Use this when you have several contributing sites, each with their own case and control counts. This is the sheet-based workflow — prepare one input file per wave.
+Use this when your cohort is already anonymised and you need separate, independent ID sets for different data types — for example genetic samples, phenotype questionnaires, and imaging. Because personal identity is not being tracked, no IDS/IDT separation is needed; you just need guaranteed-unique, unlinkable IDs per data type.
 
-**Wave 1 input** (`wave1.txt` — create in any text editor or Excel, save as `.txt` or `.xlsx`):
+Each data type is a **track**. Tracks draw from the same random number pools but produce completely independent ID sets. Without the IDT linkage key, IDs from different tracks cannot be matched to each other, even if someone has access to all the files.
+
+This was the intended use of the `T` (Track) building block in the original programme.
+
+**Generate IDs for three data types in one command:**
+
+```bash
+python3 idgenerator.py baseline \
+    --tracks "Genetics:500,Phenotype:500,Imaging:300" \
+    --output ./ids
+```
+
+This creates one IDP file per track:
 
 ```
-SampleName    NCases    NControls
-SiteA         200       400
-SiteB         120       250
-SiteC         80        160
+ids/
+  YYYYMMDD_MyStudy_IDP_IDT_ALL_N=1300.txt
+  per_site/
+    YYYYMMDD_MyStudy_IDP_IDT_T=Genetics_N=500_Baseline.txt
+    YYYYMMDD_MyStudy_IDP_IDT_T=Phenotype_N=500_Baseline.txt
+    YYYYMMDD_MyStudy_IDP_IDT_T=Imaging_N=300_Baseline.txt
+```
+
+Each file has columns `IDP | IDP128 | IDT`. The IDT column can be deleted once labelling is complete to sever any remaining cross-track linkage.
+
+**Adding new participants in a later wave:**
+
+```bash
+python3 idgenerator.py extend \
+    --tracks       "Genetics:500,Phenotype:500,Imaging:300" \
+    --new-samples  "Genetics:100,Phenotype:100" \
+    --output       ./ids
+```
+
+Only the tracks listed in `--new-samples` are extended. New IDs are guaranteed unique against all previously generated numbers.
+
+**Multi-site version of the same scenario:**
+
+If the same data types are collected across multiple sites, use `batch` with a sample sheet where each row is a site × data-type combination:
+
+```
+SampleName          NCases    NControls
+Genetics_SiteA      200       0
+Genetics_SiteB      150       0
+Phenotype_SiteA     200       0
+Phenotype_SiteB     150       0
 ```
 
 ```bash
-python3 idgenerator.py batch --input-file wave1.txt --output ./ids
+python3 idgenerator.py batch --input-file tracks.txt --output ./ids
 ```
 
-This generates IDs for all three sites in one run. The master files contain all sites combined; individual per-site files go to `ids/per_site/`.
-
-**Wave 2 — extending some sites and adding a new one:**
-
-```
-SampleName    NCases    NControls
-SiteA         30        60        ← 30 new cases added to SiteA's existing 200
-SiteB         20        40        ← extended
-SiteD         50        100       ← brand new site, created fresh automatically
-```
-
-```bash
-python3 idgenerator.py batch --input-file wave2.txt --output ./ids
-```
-
-The counts in each wave are always **additional** subjects — not the running total. The script auto-detects which sites already exist and extends them; sites not seen before are created fresh. Every new ID is guaranteed unique across all previous waves.
-
-After Wave 2 the master files are rebuilt to include all four sites (SiteA–D) across both waves.
+Set `NControls` to `0` for any track that has no case/control distinction — those rows are skipped automatically.
 
 ---
 

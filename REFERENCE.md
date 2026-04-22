@@ -283,9 +283,28 @@ All output files are **tab-separated `.txt`** with a single header row. `*128` c
 
 ---
 
+## Test sets
+
+Three self-contained test directories are provided, one per scenario. Each can be run independently from the `idGenerator_python/` directory.
+
+| Directory | Scenario | Key commands |
+|-----------|----------|--------------|
+| `test_scenario1/` | Single cohort, inline counts | `batch --samplesize`, `followup` |
+| `test_scenario2/` | Multi-track anonymised cohort | `baseline --tracks`, `extend` |
+| `test_full/` | Multi-site, multi-wave with sheet input | `batch --input-file`, `followup` |
+
+Each directory contains a `commands.sh` with the exact commands to run in order (`test_full/` uses the worked example below). `test_scenario2/` also includes `tracks.txt` for the optional multi-site batch variant.
+
+```bash
+bash test_scenario1/commands.sh
+bash test_scenario2/commands.sh
+```
+
+---
+
 ## Detailed worked example
 
-This example covers all major commands with multiple waves, an extension, a shuffle run, and a follow-up.
+This example covers all major commands with multiple waves, an extension, a shuffle run, and a follow-up. Input files are in `test_full/`.
 
 ### Input files
 
