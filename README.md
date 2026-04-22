@@ -47,6 +47,27 @@ python3 idgenerator.py init \
 
 `--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTGNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
 
+**Choosing `--blocks`** — each letter is a segment that is concatenated in order to form every ID:
+
+| Letter | Segment | Example |
+|--------|---------|---------|
+| `C` | Center code (`--center`) | `01` |
+| `T` | Track / sample name | `SiteA` |
+| `G` | Group — case or control prefix | `S` or `C` |
+| `N` | Unique random number | `12345` |
+| `V` | Visit digit (IDP = `0`, baseline IDS = `1`) | `1` |
+| `X` | Check digit (one character) | `7` |
+
+With `--blocks CTGNVX`, center `01`, track `SiteA`, a case participant, N = `12345`, and check digit `7`:
+
+```
+01SiteAS1234517
+```
+
+`CTGNVX` is the right choice for multi-site studies with a case/control distinction. If your study has no case/control groups, drop `G` and use `CTNVX`. If all participants come from a single center you can drop `C` too.
+
+> **Blinding caution:** embedding `G` in the ID exposes case/control status to anyone who sees it. Omit `G` if blinding is required.
+
 **Choosing `--digits`** — the digit count determines the maximum number of **enrolled participants** your study can have in total across all recruitment waves. The available range is split equally across three ID pools (IDP / IDS / IDT), so the limit is roughly one third of the total range:
 
 | `--digits` | Max enrolled participants |
@@ -67,50 +88,51 @@ Set `--digits` and `--visit` once in `init` and never change them.
 
 ---
 
-## Scenario 1 — New study, generating IDs for incoming recruits
+## Scenario 1 — Single cohort, specifying counts directly
 
-Use this when your study is starting fresh and you want to assign IDs to participants as they are recruited.
+Use this when your study has one cohort and you want to assign IDs without creating an input file. Pass the sample size directly on the command line with `--samplesize`.
 
-**Prepare a sample sheet** (`samples.xlsx` or `.csv` / `.txt`):
-
-| SampleName | NCases | NControls |
-|------------|--------|-----------|
-| SiteA      | 50     | 100       |
-| SiteB      | 30     | 60        |
-
-Each row is a site (or sample group). `NCases` and `NControls` are the number of participants to register in this batch.
-
-**Generate IDs:**
+**No case/control distinction** (`--blocks CTNVX`, one number = total N):
 
 ```bash
-python3 idgenerator.py batch --input-file samples.xlsx --output ./ids
+python3 idgenerator.py batch \
+    --samplesize 5000 \
+    --blocks CTNVX \
+    --output ./ids
 ```
 
-Output files are written to `./ids/`. The main files you will use are the master combined files in the top-level directory:
+**With cases and controls** (`--blocks CTGNVX`, two numbers = NCases NControls):
+
+```bash
+python3 idgenerator.py batch \
+    --samplesize 50 80 \
+    --blocks CTGNVX \
+    --output ./ids
+```
+
+The track name defaults to the study name (set in `init`). To use a different name, add `--track MyCohort`.
+
+Output files are written to `./ids/`:
 
 ```
 ids/
-  YYYYMMDD_MyStudy_IDP_IDT_ALL_N=240.txt   ← personal data + temp keys, all sites
-  YYYYMMDD_MyStudy_IDS_IDT_ALL_N=240.txt   ← study data + temp keys, all sites
-  per_site/                                 ← individual files per site (for reference)
+  YYYYMMDD_MyStudy_IDP_IDT_ALL_N=130.txt   ← personal data + temp keys
+  YYYYMMDD_MyStudy_IDS_IDT_ALL_N=130.txt   ← study data + temp keys
+  per_site/                                 ← individual files per group
   LogFile.txt
   study.cfg
 ```
 
-**Adding new recruits in a later wave:**
-
-Update your sample sheet with the *additional* counts (not the total):
-
-| SampleName | NCases | NControls |
-|------------|--------|-----------|
-| SiteA      | 20     | 40        |
-| SiteC      | 15     | 30        |
+**Adding new recruits in a later wave** — run the same command with the *additional* count. The script detects the existing cohort automatically and extends it:
 
 ```bash
-python3 idgenerator.py batch --input-file wave2.xlsx --output ./ids
+python3 idgenerator.py batch \
+    --samplesize 10 20 \
+    --blocks CTGNVX \
+    --output ./ids
 ```
 
-The script detects that SiteA already exists and extends it. SiteC is new and is created fresh. The master files are rebuilt to include all sites across all waves. Old per-site files are renamed `.old`.
+Old per-site files are renamed `.old`. The master files are rebuilt to include the full cohort.
 
 ---
 

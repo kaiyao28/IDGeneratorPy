@@ -780,7 +780,7 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
 
 def generate_batch(study, center, input_file, digits, blocks, checksum_name,
                    case_prefix, control_prefix, output_dir,
-                   extend_mode=False, input_dir=None, shuffle=False):
+                   extend_mode=False, input_dir=None, shuffle=False, samples=None):
     """
     Read a sample sheet and generate one baseline per sample×group.
 
@@ -807,16 +807,16 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     out.mkdir(parents=True, exist_ok=True)
     inp = Path(input_dir) if input_dir else out
 
-    _log(f"Reading sample sheet: {input_file}")
-    try:
-        samples = read_sample_sheet(input_file)
-    except (ValueError, ImportError) as e:
-        _log(f"ERROR: {e}")
-        return False
-
-    if not samples:
-        _log("ERROR: No valid samples found in input file.")
-        return False
+    if samples is None:
+        _log(f"Reading sample sheet: {input_file}")
+        try:
+            samples = read_sample_sheet(input_file)
+        except (ValueError, ImportError) as e:
+            _log(f"ERROR: {e}")
+            return False
+        if not samples:
+            _log("ERROR: No valid samples found in input file.")
+            return False
 
     lo_idp, hi_idp, lo_ids, hi_ids, lo_idt, hi_idt = _id_pools(digits)
 
@@ -1309,10 +1309,16 @@ def main():
 
     # ── batch ─────────────────────────────────────────────────────────────────
     p = sub.add_parser("batch", parents=[shared],
-                       help="Generate baseline from a sample sheet (cases + controls per sample)")
-    p.add_argument("--input-file", required=True,
+                       help="Generate baseline from a sample sheet or inline counts")
+    p.add_argument("--input-file", default=None,
                    help="Sample sheet file (.txt .csv .tsv .xlsx .xls). "
                         "Columns: SampleName, NCases, NControls")
+    p.add_argument("--samplesize", nargs="+", type=int, default=None,
+                   help="Inline counts instead of an input file. "
+                        "One value when --blocks has no G (e.g. --samplesize 5000). "
+                        "Two values when --blocks has G (e.g. --samplesize 50 80 for NCases NControls).")
+    p.add_argument("--track", default=None,
+                   help="Cohort/track name when using --samplesize (default: study name).")
     p.add_argument("--case-prefix",    default=None,
                    help="Single-letter prefix for case IDs (loaded from study.cfg if omitted)")
     p.add_argument("--control-prefix", default=None,
@@ -1410,13 +1416,34 @@ def main():
                                shuffle=args.shuffle)
 
     elif args.command == "batch":
-        # Auto-detect extend vs new per row by default; --fresh forces all new
+        if args.input_file is None and args.samplesize is None:
+            parser.error("batch requires either --input-file or --samplesize")
+
+        inline_samples = None
+        if args.samplesize is not None:
+            track_name = args.track or args.study
+            has_g = "G" in (args.blocks or "")
+            ss = args.samplesize
+            if has_g:
+                if len(ss) != 2:
+                    _log("ERROR: --blocks contains G (case/control mode); "
+                         "--samplesize requires two values: NCases NControls")
+                    sys.exit(1)
+                inline_samples = [(track_name, ss[0], ss[1])]
+            else:
+                if len(ss) != 1:
+                    _log("ERROR: --blocks does not contain G (single-group mode); "
+                         "--samplesize requires one value: N")
+                    sys.exit(1)
+                inline_samples = [(track_name, ss[0], 0)]
+
         ok = generate_batch(args.study, args.center, args.input_file,
                             args.digits, args.blocks, args.checksum,
                             args.case_prefix, args.control_prefix, args.output,
                             extend_mode=not args.fresh,
                             input_dir=args.input_dir or args.output,
-                            shuffle=args.shuffle)
+                            shuffle=args.shuffle,
+                            samples=inline_samples)
 
     elif args.command == "followup":
         ok = generate_followups(args.study, args.visit,
