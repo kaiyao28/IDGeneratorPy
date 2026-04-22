@@ -1,6 +1,14 @@
 # IDGeneratorPy
 
-A cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator) — a randomized clinical study ID generator originally written in VB.NET by the Genetic Epidemiology group at the University of Regensburg (Olden et al. 2016).
+A command-line tool for generating and managing randomized participant IDs in clinical or epidemiological studies. It is a cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator), originally written in VB.NET by the Genetic Epidemiology group at the University of Regensburg (Olden et al. 2016).
+
+**Core workflow in three commands:**
+
+```bash
+python3 idgenerator.py init  --study MyStudy --center 01 --output ./ids  # once per project
+python3 idgenerator.py batch --input-file samples.xlsx  --output ./ids   # generate IDs
+python3 idgenerator.py followup                         --output ./ids   # follow-up visit IDs
+```
 
 Each participant receives three linked IDs — a personal ID (IDP), a study data ID (IDS), and a temporary linkage key (IDT) — drawn from separate random number pools. Deleting IDT severs the link between personal and study data, enabling full anonymisation.
 
@@ -37,6 +45,16 @@ python3 idgenerator.py init \
 ```
 
 `--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTGNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
+
+**Choosing `--digits`** — the digit count determines the maximum number of participants your study can enrol. The available range is split equally across the three ID pools (IDP / IDS / IDT), so the limit per pool is roughly one third of the total range:
+
+| `--digits` | Max participants |
+|-----------|-----------------|
+| `5` (default) | ~30,000 |
+| `6` | ~300,000 |
+| `7` | ~3,000,000 |
+
+Set this once in `init` and never change it — all IDs in a study must use the same digit count.
 
 ---
 
@@ -122,7 +140,9 @@ Existing sites are extended automatically; new sites are created fresh.
 
 ## Follow-up visits
 
-Once baseline IDs exist, generate follow-up visit IDs with a single command. The visit number is read from `study.cfg` (set by `--visit` in `init`; default is `2`).
+Once baseline IDs have been generated, a single command produces follow-up visit IDs for all sites. No input file is needed — the script reads the IDS files it already wrote to `ids/per_site/` automatically.
+
+The visit number comes from `study.cfg` (the `--visit` value you set in `init`). The default is `2`.
 
 ```bash
 python3 idgenerator.py followup --output ./ids
@@ -137,7 +157,7 @@ ids/
     YYYYMMDD_MyStudy_IDS_IDSV2_T=SiteA_…_V=2.txt ← per-site files
 ```
 
-To generate a different visit number for one run without changing `study.cfg`:
+To generate a different visit number without changing `study.cfg`:
 
 ```bash
 python3 idgenerator.py followup --visit 3 --output ./ids
