@@ -1,0 +1,2 @@
+SampleName	NCases	NControls
+SiteE	6	12

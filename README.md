@@ -1,18 +1,19 @@
 # IDGeneratorPy
 
-A command-line tool for generating and managing randomized participant IDs in clinical or epidemiological studies. It is a cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator), originally written in VB.NET by the Genetic Epidemiology group at the University of Regensburg (Olden et al. 2016).
+A command-line tool for generating and managing randomized participant IDs in clinical or epidemiological studies. Cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator) (Olden et al. 2016, University of Regensburg).
 
-**Core workflow in three commands:**
+Each participant receives three linked IDs — a personal ID (IDP), a study data ID (IDS), and a temporary linkage key (IDT) — drawn from separate random number pools. Deleting the IDT column severs the link between personal and study data entirely, enabling full anonymisation without losing the scientific dataset.
 
-```bash
-python3 idgenerator.py init  --study MyStudy --center 01 --output ./ids  # once per project
-python3 idgenerator.py batch --input-file samples.xlsx  --output ./ids   # generate IDs
-python3 idgenerator.py followup                         --output ./ids   # follow-up visit IDs
-```
+The script is designed around two common scenarios:
 
-Each participant receives three linked IDs — a personal ID (IDP), a study data ID (IDS), and a temporary linkage key (IDT) — drawn from separate random number pools. Deleting IDT severs the link between personal and study data, enabling full anonymisation.
+**Starting a new study** — you have a planned sample size and want to assign IDs as participants are recruited. IDs are generated in batches from a simple input sheet. When new recruits join in a later wave, you run the same command with the additional counts and the script extends existing records automatically, guaranteeing no ID is ever reused.
 
-> For a full explanation of the ID system, all command flags, checksum algorithms, and a detailed worked example, see [REFERENCE.md](REFERENCE.md).
+**Assigning IDs to an existing cohort** — participants are already enrolled and you need uniform trackable IDs for data linkage. You provide the current cohort size once and generate IDs for everyone. New recruits added later are handled the same way as the scenario above.
+
+In both cases, study parameters are saved once with `init` and reused automatically on every subsequent run. All output is logged and the full ID state is always recoverable from the files on disk.
+
+> For the ID system design, all command flags, and a detailed multi-wave worked example, see [REFERENCE.md](REFERENCE.md).  
+> For a full list of changes and new features relative to the original VB.NET programme, see [CHANGES.md](CHANGES.md).
 
 ---
 
@@ -46,15 +47,23 @@ python3 idgenerator.py init \
 
 `--center` is your coordinating site code. All other settings use sensible defaults (`--digits 5`, `--blocks CTGNVX`, `--checksum Damm_2004`, `--case-prefix S`, `--control-prefix C`, `--visit 2`). Override any of them here if needed.
 
-**Choosing `--digits`** — the digit count determines the maximum number of participants your study can enrol. The available range is split equally across the three ID pools (IDP / IDS / IDT), so the limit per pool is roughly one third of the total range:
+**Choosing `--digits`** — the digit count determines the maximum number of **enrolled participants** your study can have in total across all recruitment waves. The available range is split equally across three ID pools (IDP / IDS / IDT), so the limit is roughly one third of the total range:
 
-| `--digits` | Max participants |
-|-----------|-----------------|
+| `--digits` | Max enrolled participants |
+|-----------|--------------------------|
 | `5` (default) | ~30,000 |
 | `6` | ~300,000 |
 | `7` | ~3,000,000 |
 
-Set this once in `init` and never change it — all IDs in a study must use the same digit count.
+**Follow-up visits do not consume pool numbers.** The `followup` command derives visit IDs from the same N value used at baseline — only the visit digit changes (`V=1` → `V=2` etc.). You can run as many follow-up visits as needed without approaching the limit.
+
+**The limit counts cumulative enrollment across all waves.** If you enrol 10,000 in wave 1 and add 5,000 in wave 2, that is 15,000 total — leaving 15,000 remaining capacity at 5 digits.
+
+**Plan your digit count before starting.** Digits cannot be changed after `init` — all IDs in a study must use the same count. Choose based on your maximum anticipated total enrollment, not your current sample size. For a study expecting 20,000 participants with possible extension, 5 digits is sufficient. If there is any chance of exceeding 30,000 over the study lifetime, use 6 digits from the start.
+
+**Follow-up visit numbers can be any positive integer** (2, 3, 4 …). There is no upper limit.
+
+Set `--digits` and `--visit` once in `init` and never change them.
 
 ---
 
@@ -94,8 +103,8 @@ Update your sample sheet with the *additional* counts (not the total):
 
 | SampleName | NCases | NControls |
 |------------|--------|-----------|
-| SiteA      | 20     | 40        |   ← 20 new cases, 40 new controls added to SiteA
-| SiteC      | 15     | 30        |   ← SiteC is new — created fresh automatically
+| SiteA      | 20     | 40        |
+| SiteC      | 15     | 30        |
 
 ```bash
 python3 idgenerator.py batch --input-file wave2.xlsx --output ./ids
@@ -105,42 +114,57 @@ The script detects that SiteA already exists and extends it. SiteC is new and is
 
 ---
 
-## Scenario 2 — Existing cohort, assigning IDs retrospectively
+## Scenario 2 — Multiple sites with different sample sizes
 
-Use this when participants are already enrolled and you want to assign uniform IDs across the cohort for tracking and data linkage.
+Use this when you have several contributing sites, each with their own case and control counts. This is the sheet-based workflow — prepare one input file per wave.
 
-The workflow is identical to Scenario 1 — the difference is that your sample sheet lists the *current* cohort size rather than new recruits.
+**Wave 1 input** (`wave1.txt` — create in any text editor or Excel, save as `.txt` or `.xlsx`):
 
-**Prepare a sample sheet** with current cohort sizes:
-
-| SampleName | NCases | NControls |
-|------------|--------|-----------|
-| SiteA      | 200    | 400       |
-| SiteB      | 120    | 250       |
-
-**Generate IDs for the full existing cohort:**
-
-```bash
-python3 idgenerator.py batch --input-file cohort.xlsx --output ./ids
+```
+SampleName    NCases    NControls
+SiteA         200       400
+SiteB         120       250
+SiteC         80        160
 ```
 
-This produces one ID per row in the master files. Assign the IDs to existing participants.
-
-**Adding new participants later:**
-
-List only the *additional* subjects in the new sheet and run `batch` again — the same command as Scenario 1:
-
 ```bash
-python3 idgenerator.py batch --input-file new_recruits.xlsx --output ./ids
+python3 idgenerator.py batch --input-file wave1.txt --output ./ids
 ```
 
-Existing sites are extended automatically; new sites are created fresh.
+This generates IDs for all three sites in one run. The master files contain all sites combined; individual per-site files go to `ids/per_site/`.
+
+**Wave 2 — extending some sites and adding a new one:**
+
+```
+SampleName    NCases    NControls
+SiteA         30        60        ← 30 new cases added to SiteA's existing 200
+SiteB         20        40        ← extended
+SiteD         50        100       ← brand new site, created fresh automatically
+```
+
+```bash
+python3 idgenerator.py batch --input-file wave2.txt --output ./ids
+```
+
+The counts in each wave are always **additional** subjects — not the running total. The script auto-detects which sites already exist and extends them; sites not seen before are created fresh. Every new ID is guaranteed unique across all previous waves.
+
+After Wave 2 the master files are rebuilt to include all four sites (SiteA–D) across both waves.
 
 ---
 
 ## Follow-up visits
 
 Once baseline IDs have been generated, a single command produces follow-up visit IDs for all sites. No input file is needed — the script reads the IDS files it already wrote to `ids/per_site/` automatically.
+
+Each follow-up ID is the baseline IDS ID with a visit prefix prepended:
+
+```
+Baseline IDS  :  01SiteAS123451X
+Visit 2 IDSV2 :  V2_01SiteAS123451X
+Visit 3 IDSV3 :  V3_01SiteAS123451X
+```
+
+This makes it impossible to confuse a visit 2 sample with a baseline sample — the `V2_` prefix is immediately visible on the tube label or in a spreadsheet. The full baseline ID is embedded so the link is always traceable. No new random numbers are drawn; all visit IDs are derived from the existing baseline.
 
 The visit number comes from `study.cfg` (the `--visit` value you set in `init`). The default is `2`.
 
@@ -152,16 +176,20 @@ Output:
 
 ```
 ids/
-  YYYYMMDD_MyStudy_IDS_IDSV2_ALL_N=240_V=2.txt   ← all sites, baseline IDS → visit-2 IDS pairs
+  YYYYMMDD_MyStudy_IDS_IDSV2_ALL_N=240_V=2.txt   ← all sites, IDS + IDSV2 pairs
   followup/
     YYYYMMDD_MyStudy_IDS_IDSV2_T=SiteA_…_V=2.txt ← per-site files
 ```
+
+Each output file has columns: `IDS | IDSV2 | IDS128 | IDSV2128` — the baseline and visit IDs side by side with their barcodes.
 
 To generate a different visit number without changing `study.cfg`:
 
 ```bash
 python3 idgenerator.py followup --visit 3 --output ./ids
 ```
+
+Visit numbers can be any integer ≥ 2. There is no upper limit.
 
 ---
 

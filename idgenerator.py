@@ -92,7 +92,6 @@ Output files (tab-separated .txt):
 import argparse
 import csv
 import json
-import os
 import random
 import sys
 from datetime import datetime
@@ -104,10 +103,8 @@ from pathlib import Path
 
 CONFIG_FILENAME = "study.cfg"
 
-CONFIG_KEYS = [
-    "study", "center", "digits", "blocks", "checksum",
-    "case_prefix", "control_prefix", "output", "visit",
-]
+_CONFIG_KEYS = ("study", "center", "digits", "blocks", "checksum",
+                "case_prefix", "control_prefix", "output", "visit")
 
 
 def _save_config(cfg: dict, output_dir: str) -> None:
@@ -130,44 +127,29 @@ def _load_config(output_dir: str) -> dict:
 
 def _apply_config(args: argparse.Namespace, cfg: dict) -> None:
     """Fill in any args not supplied on the CLI from the saved config."""
-    mapping = {
-        "study":           "study",
-        "center":          "center",
-        "digits":          "digits",
-        "blocks":          "blocks",
-        "checksum":        "checksum",
-        "case_prefix":     "case_prefix",
-        "control_prefix":  "control_prefix",
-        "output":          "output",
-        "visit":           "visit",
-    }
-    for arg_attr, cfg_key in mapping.items():
-        if cfg_key in cfg and getattr(args, arg_attr, None) in (None, argparse.SUPPRESS):
-            setattr(args, arg_attr, cfg[cfg_key])
+    for key in _CONFIG_KEYS:
+        if key in cfg and getattr(args, key, None) in (None, argparse.SUPPRESS):
+            setattr(args, key, cfg[key])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOGGING  (mirrors original WriteInfo → LogFile.txt behaviour)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_log_path: Path | None = None
+_log_fh = None
 
 
 def _log_init(output_dir: str) -> None:
-    global _log_path
+    global _log_fh
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    _log_path = out / "LogFile.txt"
+    _log_fh = open(out / "LogFile.txt", "a", encoding="utf-8")
 
 
 def _log(msg: str = "") -> None:
-    if msg:
-        line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {msg}"
-    else:
-        line = ""
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {msg}" if msg else ""
     print(line)
-    if _log_path:
-        with open(_log_path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+    if _log_fh:
+        _log_fh.write(line + "\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,10 +159,7 @@ def _log(msg: str = "") -> None:
 def _id_to_numstr(id_str: str) -> str:
     """Strip [CHECKSUM], replace non-digits with ASCII codes — for checksum input."""
     s = id_str.replace("[CHECKSUM]", "")
-    result = ""
-    for ch in s:
-        result += ch if ch.isdigit() else str(ord(ch))
-    return result
+    return "".join(ch if ch.isdigit() else str(ord(ch)) for ch in s)
 
 
 def checksum_simple_parity(id_str: str) -> int:
@@ -366,12 +345,22 @@ def get_param_from_filename(path: str, param: str) -> str:
 def count_data_lines(filepath: str) -> int:
     """Count non-header lines in a tab-separated file."""
     with open(filepath, encoding="utf-8") as f:
-        lines = [ln for ln in f if ln.strip()]
-    return max(0, len(lines) - 1)
+        next(f, None)  # skip header
+        return sum(1 for ln in f if ln.strip())
 
 
 def _unique_randoms(lo: int, hi: int, count: int, excluded: set) -> list:
     """Draw `count` unique random integers from [lo, hi] avoiding `excluded`."""
+    available = hi - lo + 1 - len(excluded)
+    if count > available:
+        raise ValueError(
+            f"Cannot draw {count} unique values: only {available} available in [{lo}, {hi}]."
+        )
+    # For dense draws (>10% of available pool), enumerate candidates and sample directly
+    # to avoid exponentially increasing rejection retries near the pool limit.
+    if count > available * 0.1:
+        candidates = [x for x in range(lo, hi + 1) if x not in excluded]
+        return random.sample(candidates, count)
     result = []
     used = set(excluded)
     for _ in range(count):
@@ -381,6 +370,13 @@ def _unique_randoms(lo: int, hi: int, count: int, excluded: set) -> list:
         used.add(n)
         result.append(n)
     return result
+
+
+def _max_pool_size(digits: int) -> int:
+    """Maximum number of IDs that can be generated for a given digit count (one pool's share)."""
+    if digits == 10:
+        return 2_147_483_647
+    return (10 ** digits - 10 ** (digits - 1) - 3) // 3
 
 
 def _id_pools(digits: int):
@@ -608,10 +604,7 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
     out.mkdir(parents=True, exist_ok=True)
 
     total_n = sum(n for _, n in tracks)
-    max_possible = (10 ** digits - 10 ** (digits - 1) - 3) // 3
-    if digits == 10:
-        max_possible = 2_147_483_647
-
+    max_possible = _max_pool_size(digits)
     if total_n > max_possible:
         _log(f"ERROR: {total_n} IDs requested but maximum for {digits} digits is {max_possible}.")
         return False
@@ -642,16 +635,18 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
         all_idp_rows.extend(idp_rows)
         all_ids_rows.extend(ids_rows)
         _log(f"  [{track_name}] {track_n} IDs  →  {idp_file.name}")
-        if ids_file:
-            _log(f"                         {ids_file.name}")
+        _log(f"                         {ids_file.name}")
         pos += track_n
 
+    # ALL files: no barcode columns — clean IDs only, safe for Excel/R merging
     combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_n}.txt"
-    _write_tsv(combined_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
+    _write_tsv(combined_idp, ["IDP", "IDT", "Track", "Group"],
+               [(r[0], r[2], r[3], r[4]) for r in all_idp_rows])
     _log(f"  Combined IDP : {combined_idp.name}")
     if all_ids_rows:
         combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_n}.txt"
-        _write_tsv(combined_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
+        _write_tsv(combined_ids, ["IDS", "IDT", "Track", "Group"],
+                   [(r[0], r[2], r[3], r[4]) for r in all_ids_rows])
         _log(f"  Combined IDS : {combined_ids.name}")
 
     _log("Done.")
@@ -748,6 +743,7 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
     idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*.txt"))
     ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*.txt"))
 
+    # ALL files: IDP/IDS and IDT only — no barcode columns, safe for Excel/R merging
     all_idp_rows, all_ids_rows = [], []
     for f in idp_files:
         track = get_param_from_filename(str(f), "T")
@@ -755,7 +751,8 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
         with open(f, encoding="utf-8") as fh:
             lines = [ln for ln in fh.read().splitlines() if ln.strip()]
         for line in lines[1:]:
-            all_idp_rows.append(line.split("\t") + [track, group])
+            cols = line.split("\t")
+            all_idp_rows.append([cols[0], cols[2], track, group])  # IDP, IDT
 
     for f in ids_files:
         track = get_param_from_filename(str(f), "T")
@@ -763,7 +760,8 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
         with open(f, encoding="utf-8") as fh:
             lines = [ln for ln in fh.read().splitlines() if ln.strip()]
         for line in lines[1:]:
-            all_ids_rows.append(line.split("\t") + [track, group])
+            cols = line.split("\t")
+            all_ids_rows.append([cols[0], cols[2], track, group])  # IDS, IDT
 
     # Retire old master ALL files
     for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*.txt")):
@@ -772,10 +770,10 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
         old.rename(old.with_suffix(".old"))
 
     master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}.txt"
-    _write_tsv(master_idp, ["IDP", "IDP128", "IDT", "Track", "Group"], all_idp_rows)
+    _write_tsv(master_idp, ["IDP", "IDT", "Track", "Group"], all_idp_rows)
 
     master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}.txt"
-    _write_tsv(master_ids, ["IDS", "IDS128", "IDT", "Track", "Group"], all_ids_rows)
+    _write_tsv(master_ids, ["IDS", "IDT", "Track", "Group"], all_ids_rows)
 
     return master_idp, master_ids
 
@@ -871,9 +869,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
     # ── Validate total new IDs against pool limits ────────────────────────────
     total_new = sum(e["add_n"] for e in plan)
-    max_possible = (10 ** digits - 10 ** (digits - 1) - 3) // 3
-    if digits == 10:
-        max_possible = 2_147_483_647
+    max_possible = _max_pool_size(digits)
     if total_new > max_possible:
         _log(f"ERROR: {total_new} new IDs requested but max for {digits} digits is {max_possible}.")
         return False
@@ -972,17 +968,22 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 # F2. GENERATE FOLLOW-UPs
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generate_followups(study, center, digits, blocks, checksum_name, visit,
-                       input_dir, output_dir):
+def generate_followups(study, visit, input_dir, output_dir):
     """
-    Generate follow-up IDs from existing IDS_IDT baseline files (including batch-generated ones).
+    Generate follow-up IDs from existing IDS_IDT baseline files.
+
+    Each follow-up ID is the baseline IDS ID prefixed with the visit tag, e.g.:
+      Baseline IDS  : 01SiteAS123451X
+      Visit 2 IDSV2 : V2_01SiteAS123451X
+      Visit 3 IDSV3 : V3_01SiteAS123451X
+
+    This makes the relationship explicit and prevents any confusion with baseline IDs.
+    No new random numbers are drawn — all visit IDs are derived from existing baselines.
     """
-    checksum_fn = CHECKSUMS[checksum_name]
     inp = Path(input_dir)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Search both the main dir and the per_site subfolder
     search_dirs = [inp, inp / "per_site"]
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
@@ -994,16 +995,16 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
         _log(f"ERROR: No baseline files found for study '{study}' in {inp}")
         return False
 
-    # Per-site followup files go into followup/ subfolder; ALL in main dir
     followup_out = out / "followup"
     followup_out.mkdir(parents=True, exist_ok=True)
 
     ts = timestamp()
-    all_rows = []   # accumulates (IDS, IDSVn, IDS128, IDSVn128, Track, Group)
+    visit_tag = f"V{visit}_"
+    all_rows = []
 
     for bf in baseline_files:
         track_name = get_param_from_filename(str(bf), "T")
-        group      = get_param_from_filename(str(bf), "G")   # "" if not a batch file
+        group      = get_param_from_filename(str(bf), "G")
 
         with open(bf, encoding="utf-8") as f:
             reader = csv.reader(f, delimiter="\t")
@@ -1013,42 +1014,32 @@ def generate_followups(study, center, digits, blocks, checksum_name, visit,
                 return False
             rows = [r for r in reader if r]
 
-        len_c = len(center)
-        len_t = len(track_name)
-        len_g = len(group)
-        pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
-
-        ids_out  = []
-        idsv_out = []
-
-        for row in rows:
-            ids_id = row[0]
-            n = int(ids_id[pos_n:pos_n + digits]) if pos_n >= 0 else 0
-            ids_rebuilt = build_id(blocks, center, track_name, n, 1,    checksum_fn, group=group)
-            idsv_new    = build_id(blocks, center, track_name, n, visit, checksum_fn, group=group)
-            ids_out.append((ids_rebuilt, format_code128(ids_rebuilt)))
-            idsv_out.append((idsv_new,   format_code128(idsv_new)))
+        ids_ids  = [row[0] for row in rows]
+        ids128   = [row[1] for row in rows]
+        idsv_ids = [visit_tag + ids for ids in ids_ids]
+        idsv128  = [format_code128(v) for v in idsv_ids]
 
         track_n = len(rows)
         g_tag   = f"_G={group}" if group else ""
+
+        # Per-site file: keeps barcode columns for label printing
         per_site_file = followup_out / f"{ts}_{study}_IDS_IDSV{visit}_T={track_name}{g_tag}_N={track_n}_V={visit}.txt"
         _write_tsv(per_site_file,
                    ["IDS", f"IDSV{visit}", "IDS128", f"IDSV{visit}128"],
-                   ((ids, idsv, ids128, idsv128)
-                    for (ids, ids128), (idsv, idsv128) in zip(ids_out, idsv_out)))
+                   zip(ids_ids, idsv_ids, ids128, idsv128))
 
-        for (ids, ids128), (idsv, idsv128) in zip(ids_out, idsv_out):
-            all_rows.append((ids, idsv, ids128, idsv128, track_name, group))
+        for ids, idsv in zip(ids_ids, idsv_ids):
+            all_rows.append((ids, idsv, track_name, group))
 
         label = f"{track_name}/{group}" if group else track_name
         _log(f"  [{label}] {track_n} follow-ups (V={visit})  →  followup/{per_site_file.name}")
 
-    # Retire old followup ALL and write fresh one
     for old in sorted(out.glob(f"*_{study}_IDS_IDSV{visit}_ALL_*_V={visit}.txt")):
         old.rename(old.with_suffix(".old"))
+    # ALL file: no barcode columns — clean IDs only, safe for Excel/R merging
     all_file = out / f"{ts}_{study}_IDS_IDSV{visit}_ALL_N={len(all_rows)}_V={visit}.txt"
     _write_tsv(all_file,
-               ["IDS", f"IDSV{visit}", "IDS128", f"IDSV{visit}128", "Track", "Group"],
+               ["IDS", f"IDSV{visit}", "Track", "Group"],
                all_rows)
     _log(f"  Master FOLLOWUP_ALL : {all_file.name}")
 
@@ -1181,8 +1172,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         idp_files[0].rename(idp_files[0].with_suffix(".old"))
         _log(f"  [{track_name}] extended {existing_n} → {total_n}")
         _log(f"    IDP→IDT : {idp_file.name}")
-        if ids_file:
-            _log(f"    IDS→IDT : {ids_file.name}")
+        _log(f"    IDS→IDT : {ids_file.name}")
         _log(f"    (old files renamed to .old)")
 
     _log("Done.")
@@ -1429,9 +1419,8 @@ def main():
                             shuffle=args.shuffle)
 
     elif args.command == "followup":
-        ok = generate_followups(args.study, args.center,
-                                args.digits, args.blocks, args.checksum,
-                                args.visit, args.input_dir or args.output, args.output)
+        ok = generate_followups(args.study, args.visit,
+                                args.input_dir or args.output, args.output)
 
     elif args.command == "add-track":
         ok = add_track(args.study, args.track, args.output, shuffle=args.shuffle)

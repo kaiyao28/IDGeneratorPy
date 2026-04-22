@@ -190,7 +190,7 @@ ids/
 ```
 
 Columns per-site: `IDS | IDSVn | IDS128 | IDSVn128`  
-Columns ALL: `IDS | IDSVn | IDS128 | IDSVn128 | Track | Group`
+Columns ALL: `IDS | IDSVn | Track | Group`
 
 ---
 
@@ -246,10 +246,13 @@ All output files are **tab-separated `.txt`** with a single header row. `*128` c
 |-----------|---------|
 | `IDP_IDT` per-site | `IDP`, `IDP128`, `IDT` |
 | `IDS_IDT` per-site | `IDS`, `IDS128`, `IDT` |
-| `*_ALL` master | above + `Track`, `Group` |
+| `IDP_IDT` ALL master | `IDP`, `IDT`, `Track`, `Group` |
+| `IDS_IDT` ALL master | `IDS`, `IDT`, `Track`, `Group` |
 | Follow-up per-site | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` |
-| Follow-up ALL | above + `Track`, `Group` |
+| Follow-up ALL | `IDS`, `IDSVn`, `Track`, `Group` |
 | External | `IDS`, `IDE`, `IDS128`, `IDE128` |
+
+> **Why no barcodes in ALL master files?** Code 128 barcode strings occasionally contain a space character (when the check value equals 0), which breaks Excel VLOOKUP and R `merge()` / `trimws()`. Per-site files keep barcodes for tube label printing; the master analytical files contain only plain IDs.
 
 **Filename conventions:**
 
@@ -264,35 +267,33 @@ All output files are **tab-separated `.txt`** with a single header row. `*128` c
 
 This example covers all major commands with multiple waves, an extension, a shuffle run, and a follow-up.
 
-### Directory and file setup
+### Input files
 
-```
-test_full/
-  samples.txt       ← Wave 1
-  wave2.txt         ← Wave 2 (extend SiteA, new SiteC)
-  wave3.txt         ← Wave 3 (new SiteD with shuffle)
-  ids/              ← output directory
-```
+The input files are in `test_full/`:
 
-**samples.txt** (Wave 1):
+**wave1.txt** (Wave 1 — three new sites):
 ```
 SampleName	NCases	NControls
-SiteA	10	5
-SiteB	8	4
+SiteA	20	40
+SiteB	15	30
+SiteC	10	20
 ```
+Total N = 135
 
-**wave2.txt** (Wave 2 — extend SiteA, new SiteC):
+**wave2.txt** (Wave 2 — extend SiteA, add new SiteD):
 ```
 SampleName	NCases	NControls
-SiteA	5	3
-SiteC	12	6
+SiteA	5	10
+SiteD	8	16
 ```
+Adds 39; running total N = 174
 
-**wave3.txt** (Wave 3 — new site, shuffled IDS):
+**wave3.txt** (Wave 3 — add new SiteE, shuffled):
 ```
 SampleName	NCases	NControls
-SiteD	7	3
+SiteE	6	12
 ```
+Adds 18; running total N = 192
 
 ### Run all steps
 
@@ -304,19 +305,19 @@ python3 idgenerator.py init \
     --case-prefix S --control-prefix C --visit 2 \
     --output test_full/ids
 
-# Step 2 — Wave 1: all four site×group combinations are new
+# Step 2 — Wave 1: all six site×group combinations are new
 python3 idgenerator.py batch \
-    --input-file test_full/samples.txt \
+    --input-file test_full/wave1.txt \
     --output test_full/ids \
     --seed 42
 
-# Step 3 — Wave 2: SiteA is extended; SiteC is new (auto-detected)
+# Step 3 — Wave 2: SiteA is extended; SiteD is new (auto-detected)
 python3 idgenerator.py batch \
     --input-file test_full/wave2.txt \
     --output test_full/ids \
     --seed 43
 
-# Step 4 — Wave 3: SiteD is new; --shuffle randomises row order in IDS files
+# Step 4 — Wave 3: SiteE is new; --shuffle randomises row order in IDS files
 python3 idgenerator.py batch \
     --input-file test_full/wave3.txt \
     --output test_full/ids \
@@ -332,36 +333,39 @@ python3 idgenerator.py followup \
 **After Step 2 (Wave 1):**
 ```
 test_full/ids/
-  20XXXXXX_TestStudy_IDP_IDT_ALL_N=27.txt
-  20XXXXXX_TestStudy_IDS_IDT_ALL_N=27.txt
+  20XXXXXX_TestStudy_IDP_IDT_ALL_N=135.txt
+  20XXXXXX_TestStudy_IDS_IDT_ALL_N=135.txt
   per_site/
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=S_N=10_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=C_N=5_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=S_N=8_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=C_N=4_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=S_N=20_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=C_N=40_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=S_N=15_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=C_N=30_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=S_N=10_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=C_N=20_Baseline.txt
     (+ matching IDS_IDT files)
 ```
 
 **After Step 3 (Wave 2):**
-- SiteA files are replaced: `_Baseline.txt` → `.old`, new `_Extended.txt` written
-- SiteC files created fresh as `_Baseline.txt`
-- Master ALL rebuilt with all sites (SiteA 15 cases, SiteB 8 cases, SiteC 12 cases, etc.)
+- SiteA `_Baseline.txt` renamed to `.old`; new `_Extended.txt` written (25S / 50C)
+- SiteD files created fresh as `_Baseline.txt`
+- Master ALL rebuilt: all five sites (A–D), N=174 total
 
 **After Step 4 (Wave 3):**
-- SiteD files created as `_Baseline.txt`
-- `--shuffle` randomises row order in per-site IDS files for SiteD
+- SiteE files created as `_Baseline.txt`
+- `--shuffle` randomises row order in per-site IDS files for SiteE
+- Master ALL rebuilt: all six sites (A–E), N=192 total
 
 **After Step 5 (Follow-up):**
 ```
 test_full/ids/
-  20XXXXXX_TestStudy_IDS_IDSV2_ALL_N={total}_V=2.txt
+  20XXXXXX_TestStudy_IDS_IDSV2_ALL_N=192_V=2.txt    ← IDS | IDSV2 | Track | Group
   followup/
-    20XXXXXX_TestStudy_IDS_IDSV2_T=SiteA_G=S_N=15_V=2.txt
-    20XXXXXX_TestStudy_IDS_IDSV2_T=SiteA_G=C_N=8_V=2.txt
-    … (one file per site/group)
+    20XXXXXX_TestStudy_IDS_IDSV2_T=SiteA_G=S_N=25_V=2.txt
+    20XXXXXX_TestStudy_IDS_IDSV2_T=SiteA_G=C_N=50_V=2.txt
+    … (one file per site/group, including SiteE)
 ```
 
-All sites — including SiteD whose IDS file was shuffled — appear in the follow-up master.
+All six sites appear in the follow-up master, including SiteE whose IDS file was shuffled.
 
 ### Key observations
 
@@ -370,19 +374,6 @@ All sites — including SiteD whose IDS file was shuffled — appear in the foll
 - **Unique IDs across all waves**: existing numbers are read back from old files before new numbers are drawn, so there is no risk of collision.
 - **`_Baseline` vs `_Extended`**: a site that has been extended will always have `_Extended.txt` as its current per-site file. The `_Baseline.txt` for that site is retained as `.old` for audit purposes.
 - **Master files**: after every `batch` run the master `_ALL_` files are rebuilt from scratch from all current per-site files, so they represent the complete state of the study at that moment.
-
----
-
-## Differences from the original VB.NET programme
-
-| Original | This port |
-|----------|-----------|
-| Windows only (WinForms GUI) | Windows / macOS / Linux (CLI) |
-| Config saved as `Config.xml` | Config saved as `study.cfg` (JSON) via `init` |
-| 5 operations via radio buttons | 7 subcommands: `init`, `baseline`, `batch`, `followup`, `add-track`, `extend`, `external` |
-| No batch / sample-sheet input | `batch` with flexible column aliases and auto-extend |
-| No mixed new/extend in one run | `batch` auto-detects per row |
-| Bug: ExtendBaseline overwrote IDT with IDS value | Fixed |
 
 ---
 
