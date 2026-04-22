@@ -80,7 +80,7 @@ Run `init` once at the start of the project. It writes a `study.cfg` file that e
 python idgenerator.py init \
     --study MyStudy --center 01 \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C \
+    --case-prefix S --control-prefix C --visit 2 \
     --output ./ids
 ```
 
@@ -169,27 +169,27 @@ The `test_full/` directory in this repository contains ready-to-run input sheets
 **Run all steps in order:**
 
 ```bash
-# Once only — save study parameters to study.cfg
+# Once only — save study parameters to study.cfg (including follow-up visit number)
 python idgenerator.py init \
     --study TestStudy --center 01 \
     --digits 5 --blocks CTGNVX --checksum Damm_2004 \
-    --case-prefix S --control-prefix C \
+    --case-prefix S --control-prefix C --visit 2 \
     --output test_full/ids
 
-# Wave 1 — study/center/blocks etc loaded automatically from study.cfg
+# Wave 1 — all parameters loaded from study.cfg
 python idgenerator.py batch --input-file test_full/samples.csv --seed 42 --output test_full/ids
 
-# Wave 2 — script auto-detects SiteA exists → extends; SiteC is new → creates
+# Wave 2 — auto-detects SiteA exists → extends; SiteC is new → creates
 python idgenerator.py batch --input-file test_full/wave2.csv --seed 43 --output test_full/ids
 
-# Wave 3 — new site; --shuffle also writes per-site IDS file into per_site/
+# Wave 3 — new site; --shuffle randomises row order in per-site IDS file
 python idgenerator.py batch --input-file test_full/wave3.csv --shuffle --seed 44 --output test_full/ids
 
-# Follow-up visit 2 — no --input-dir needed, defaults to --output
-python idgenerator.py followup --visit 2 --output test_full/ids
+# Follow-up — visit number loaded from study.cfg; covers all sites in one command
+python idgenerator.py followup --output test_full/ids
 ```
 
-Each wave produces a single `_ALL_` combined file. The script auto-detects whether each site already has a baseline and extends or creates accordingly — no `--extend` flag needed. After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail including the config file path and seed.
+After each wave, the master `IDP_IDT_ALL` and `IDS_IDT_ALL` files are rebuilt from every current per-site file, so they always contain all sites across all waves. The `followup` command likewise produces a master `IDS_IDSV2_ALL` covering all sites. After running, `test_full/ids/LogFile.txt` contains a full timestamped audit trail.
 
 ---
 
@@ -208,8 +208,21 @@ python idgenerator.py init \
     --checksum Damm_2004 \
     --case-prefix S \
     --control-prefix C \
+    --visit 2 \
     --output ./output
 ```
+
+| Parameter | Saved | Default |
+|-----------|-------|---------|
+| `--study` | yes | *(required)* |
+| `--center` | yes | `""` |
+| `--digits` | yes | `5` |
+| `--blocks` | yes | `CTNVX` |
+| `--checksum` | yes | `Damm_2004` |
+| `--case-prefix` | yes | `S` |
+| `--control-prefix` | yes | `C` |
+| `--visit` | yes | `2` |
+| `--output` | yes | `.` |
 
 CLI flags always take precedence over `study.cfg` values, which in turn take precedence over built-in defaults.
 
@@ -319,21 +332,26 @@ python idgenerator.py batch --input-file samples.xlsx --fresh --output ./output
 
 ### `followup` — generate follow-up visit IDs
 
-Reads existing baseline IDS_IDT files and produces IDS↔IDSVn pairs for a new visit number. Works on files produced by both `baseline` and `batch`.
+Reads all current per-site IDS_IDT files from `per_site/` and produces IDS↔IDSVn pairs. The visit number is loaded from `study.cfg` (set via `init --visit`). Pass `--visit` on the CLI to override for a specific run.
 
 ```bash
-python idgenerator.py followup \
-    --study     MyStudy \
-    --center    01 \
-    --digits    5 \
-    --blocks    CTGNVX \
-    --checksum  Damm_2004 \
-    --visit     2 \
-    --input-dir ./output \
-    --output    ./output
+# With visit number from study.cfg (recommended)
+python idgenerator.py followup --output ./output
+
+# Override visit number for this run only
+python idgenerator.py followup --visit 3 --output ./output
 ```
 
-Output columns: `IDS | IDSVn | IDS128 | IDSVn128`
+Output structure:
+```
+output/
+  IDS_IDSV{n}_ALL_N={total}_V={n}.txt   ← all sites merged (Track + Group columns)
+  followup/
+    IDS_IDSV{n}_T=…_G=…_N=…_V={n}.txt  ← one file per site/group
+```
+
+Output columns — per-site: `IDS | IDSVn | IDS128 | IDSVn128`  
+Output columns — ALL: `IDS | IDSVn | IDS128 | IDSVn128 | Track | Group`
 
 ---
 
@@ -403,18 +421,34 @@ Output columns: `IDS | IDE | IDS128 | IDE128`
 
 ## Output file format
 
-All output files are **tab-separated `.txt`** with a single header row, matching the format of the original Windows application exactly.
+All output files are **tab-separated `.txt`** with a single header row. The `*128` columns contain Code 128 barcode-encoded strings.
 
-| File type | Columns | When generated |
-|-----------|---------|----------------|
-| `IDP_IDT` | `IDP`, `IDP128`, `IDT` | Always (default) |
-| `IDS_IDT` | `IDS`, `IDS128`, `IDT` | Only with `--shuffle` |
-| Follow-up | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` | `followup` command |
-| External  | `IDS`, `IDE`, `IDS128`, `IDE128` | `external` command |
+**Directory layout after a full run:**
+```
+output/
+  study.cfg                              ← study parameters (written by init)
+  LogFile.txt                            ← timestamped audit trail
+  IDP_IDT_ALL_N={total}_Baseline.txt     ← master: all sites, personal data + temp keys
+  IDS_IDT_ALL_N={total}_Baseline.txt     ← master: all sites, study data
+  IDS_IDSV{n}_ALL_N={total}_V={n}.txt   ← master: all sites, follow-up visit n
+  per_site/
+    IDP_IDT_T=…_G=…_N=…_Baseline.txt    ← per-site personal data (always written)
+    IDS_IDT_T=…_G=…_N=…_Baseline.txt    ← per-site study data (always written)
+    *.old                                ← superseded files when a site is extended
+  followup/
+    IDS_IDSV{n}_T=…_G=…_N=…_V={n}.txt  ← per-site follow-up files
+```
 
-The `*128` columns contain Code 128 barcode-encoded strings.
+| File type | Columns |
+|-----------|---------|
+| `IDP_IDT` per-site | `IDP`, `IDP128`, `IDT` |
+| `IDS_IDT` per-site | `IDS`, `IDS128`, `IDT` |
+| `*_ALL` combined | above + `Track`, `Group` |
+| Follow-up per-site | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` |
+| Follow-up ALL | above + `Track`, `Group` |
+| External | `IDS`, `IDE`, `IDS128`, `IDE128` |
 
-By default, only the `IDP_IDT` file is written per sample. Pass `--shuffle` to also produce the `IDS_IDT` file with row order randomised (which breaks positional re-linking of personal and study data).
+Pass `--shuffle` to randomise row order in per-site IDS files (breaks positional re-linking of personal and study data). The master ALL files are always written regardless.
 
 ---
 
