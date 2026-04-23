@@ -907,14 +907,14 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
 
 
 def _find_multitrack_site_file(study: str, site_name: str, track_tag: str,
-                               search_dir: Path):
+                               search_dir: Path, id_type: str = "IDP"):
     """Return the most recent per-site multi-track file, or None if not found."""
     candidates = []
     for d in [search_dir, search_dir / "per_site"]:
         if d.exists():
             for sfx in ("Baseline", "Extended"):
                 candidates += list(d.glob(
-                    f"*{study}_IDP_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
+                    f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
     candidates.sort()
     return candidates[-1] if candidates else None
 
@@ -1106,19 +1106,19 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
 
 def _generate_batch_multitrack(study, center, samples, track_names, digits, blocks,
-                               checksum_name, output_dir, input_dir=None):
+                               checksum_name, output_dir, input_dir=None, anon=False):
     """
     Batch-generate multi-track IDs from a sample sheet.
 
     samples    : list of (site_name, n_participants, _) — NControls ignored
     track_names: list of track name strings e.g. ['Genetics', 'Phenotype']
+    anon       : True  → draw from IDS pool, label columns IDS_* (anonymised cohort,
+                         no personal data tracked)
+                 False → draw from IDP pool, label columns IDP_* (personal data tracked)
 
-    Every participant at a site receives one IDT and one IDP per track.
-    If an existing per-site file is found it is extended; otherwise a fresh file is created.
-    A master ALL file covering all sites is rebuilt after each run.
-
-    Per-site output  (per_site/): IDT | IDP_T1 | IDP_T2 | ...
-    Master ALL (output_dir/)    : Site | IDT | IDP_T1 | IDP_T2 | ...
+    Every participant receives one IDT and one ID per track.
+    Per-site output  (per_site/): IDT | {IDP|IDS}_T1 | {IDP|IDS}_T2 | ...
+    Master ALL (output_dir/)    : Site | IDT | {IDP|IDS}_T1 | ...
     """
     checksum_fn = CHECKSUMS[checksum_name]
     out = Path(output_dir)
@@ -1127,18 +1127,22 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     per_site_out = out / "per_site"
     per_site_out.mkdir(parents=True, exist_ok=True)
 
-    lo_idp, hi_idp, _, _, lo_idt, hi_idt = _id_pools(digits)
+    lo_idp, hi_idp, lo_ids, hi_ids, lo_idt, hi_idt = _id_pools(digits)
+    id_type  = "IDS" if anon else "IDP"
+    lo_col   = lo_ids if anon else lo_idp
+    hi_col   = hi_ids if anon else hi_idp
+    id_visit = 1 if anon else 0   # IDS visit=1 (study data), IDP visit=0 (personal data)
     track_tag = "+".join(track_names)
 
     # ── Planning phase: classify sites, collect existing numbers ─────────────
     plan = []
     used_idt: set = set()
-    used_idp: set = set()
+    used_col: set = set()
 
     for site_name, n_participants, _ in samples:
         if n_participants == 0:
             continue
-        existing_file = _find_multitrack_site_file(study, site_name, track_tag, inp)
+        existing_file = _find_multitrack_site_file(study, site_name, track_tag, inp, id_type)
         if existing_file:
             with open(existing_file, encoding="utf-8") as f:
                 reader = csv.reader(f, delimiter="\t")
@@ -1150,10 +1154,10 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
                 if pos_idt >= 0 and row[0]:
                     used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
             for i, t in enumerate(track_names):
-                pos_idp = field_start(blocks, "N", len(center), len(t), digits)
+                pos_col = field_start(blocks, "N", len(center), 1, digits)  # T block = 1 char (t[0])
                 for row in existing_rows:
-                    if pos_idp >= 0 and len(row) > i + 1 and row[i + 1]:
-                        used_idp.add(int(row[i + 1][pos_idp:pos_idp + digits]))
+                    if pos_col >= 0 and len(row) > i + 1 and row[i + 1]:
+                        used_col.add(int(row[i + 1][pos_col:pos_col + digits]))
             plan.append(dict(site_name=site_name, add_n=n_participants, mode="extend",
                              existing_n=existing_n, existing_rows=existing_rows,
                              existing_file=existing_file))
@@ -1165,9 +1169,10 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         return False
 
     total_new_idt = sum(e["add_n"] for e in plan)
-    total_new_idp = total_new_idt * len(track_names)
+    total_new_col = total_new_idt * len(track_names)
 
     _log(f"Tracks       : {', '.join(track_names)}")
+    _log(f"ID type      : {id_type}  ({'anonymised cohort — no personal data' if anon else 'personal data tracked'})")
     _log(f"Sites        : {len(plan)}")
     _log(f"\n{'Site':<20} {'Action':<10} {'Add':>6} {'Existing':>9}")
     _log("-" * 52)
@@ -1175,20 +1180,21 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         ex_str = str(e.get("existing_n", "—")).rjust(9)
         _log(f"  {e['site_name']:<18} {e['mode']:<10} {e['add_n']:>6} {ex_str}")
     _log("-" * 52)
-    _log(f"  New IDT to generate : {total_new_idt}")
-    _log(f"  New IDP to generate : {total_new_idp}  ({len(track_names)} tracks × {total_new_idt})")
+    _log(f"  New IDT to generate  : {total_new_idt}")
+    _log(f"  New {id_type} to generate : {total_new_col}  ({len(track_names)} tracks × {total_new_idt})")
     _log()
     _log(f"ID-P pool : {lo_idp} – {hi_idp}")
+    _log(f"ID-S pool : {lo_ids} – {hi_ids}")
     _log(f"ID-T pool : {lo_idt} – {hi_idt}\n")
 
     # ── Draw all new numbers globally in one pass ─────────────────────────────
     new_idt_pool = _unique_randoms(lo_idt, hi_idt, total_new_idt, used_idt)
-    new_idp_pool = _unique_randoms(lo_idp, hi_idp, total_new_idp, used_idp)
+    new_col_pool = _unique_randoms(lo_col, hi_col, total_new_col, used_col)
 
     ts = timestamp()
     idt_pos = 0
-    idp_pos = 0
-    file_header = ["IDT"] + [f"IDP_{t}" for t in track_names]
+    col_pos = 0
+    file_header = ["IDT"] + [f"{id_type}_{t}" for t in track_names]
 
     for e in plan:
         site_name = e["site_name"]
@@ -1199,13 +1205,14 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         idt_ids   = [build_id(blocks, center, "", n, 1, checksum_fn) for n in idt_slice]
         idt_pos  += add_n
 
-        idp_by_track: dict = {}
+        col_by_track: dict = {}
         for t in track_names:
-            idp_slice       = new_idp_pool[idp_pos:idp_pos + add_n]
-            idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in idp_slice]
-            idp_pos        += add_n
+            col_slice       = new_col_pool[col_pos:col_pos + add_n]
+            col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn)
+                               for n in col_slice]
+            col_pos        += add_n
 
-        new_rows = [[idt_ids[i]] + [idp_by_track[t][i] for t in track_names]
+        new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
                     for i in range(add_n)]
 
         if mode == "extend":
@@ -1221,14 +1228,14 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             action        = f"{add_n} new"
 
         per_site_file = per_site_out / (
-            f"{ts}_{study}_IDP_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
+            f"{ts}_{study}_{id_type}_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
         )
         _write_tsv(per_site_file, file_header, all_file_rows)
         _log(f"  [{site_name}] {action}  →  per_site/{per_site_file.name}")
 
     # ── Rebuild master ALL by re-reading every current per-site file ──────────
     all_master_rows = []
-    for f in sorted(per_site_out.glob(f"*{study}_IDP_T={track_tag}_SITE=*.txt")):
+    for f in sorted(per_site_out.glob(f"*{study}_{id_type}_T={track_tag}_SITE=*.txt")):
         site = get_param_from_filename(str(f), "SITE")
         with open(f, encoding="utf-8") as fh:
             lines = [ln for ln in fh.read().splitlines() if ln.strip()]
@@ -1236,11 +1243,11 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             cols = line.split("\t")
             all_master_rows.append([site] + cols)
 
-    for old in sorted(out.glob(f"*_{study}_IDP_T={track_tag}_ALL_*.txt")):
+    for old in sorted(out.glob(f"*_{study}_{id_type}_T={track_tag}_ALL_*.txt")):
         old.rename(old.with_suffix(".old"))
 
-    master_header = ["Site", "IDT"] + [f"IDP_{t}" for t in track_names]
-    master_file   = out / f"{ts}_{study}_IDP_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
+    master_header = ["Site", "IDT"] + [f"{id_type}_{t}" for t in track_names]
+    master_file   = out / f"{ts}_{study}_{id_type}_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
     _write_tsv(master_file, master_header, all_master_rows)
     _log(f"  Master ALL : {master_file.name}")
     _log("Done.")
@@ -1589,6 +1596,10 @@ def main():
                         "(e.g. 'Genetics,Phenotype'). Saved to study.cfg and picked up "
                         "automatically by every subsequent batch call. Override on the CLI "
                         "at any time to add new tracks.")
+    p.add_argument("--anon", action="store_true",
+                   help="Anonymised cohort: generate IDS (study data IDs) instead of "
+                        "IDP (personal data IDs). Use when participants have no personal "
+                        "data to track — only scientific data IDs are needed.")
     p.add_argument("--visit", type=int, default=2,
                    help="Follow-up visit number to use for all followup runs (default: 2)")
     p.add_argument("--output",   default=".", help="Study output directory")
@@ -1698,6 +1709,8 @@ def main():
         }
         if getattr(args, "tracks", None):
             cfg_data["tracks"] = args.tracks
+        if getattr(args, "anon", False):
+            cfg_data["anon"] = True
         _save_config(cfg_data, args.output)
         if cfg:
             print("Previous config overwritten.")
@@ -1756,7 +1769,8 @@ def main():
             ok = _generate_batch_multitrack(
                 args.study, args.center, mt_samples, track_names,
                 args.digits, args.blocks, args.checksum,
-                args.output, args.input_dir or args.output)
+                args.output, args.input_dir or args.output,
+                anon=cfg.get("anon", False))
         else:
             # ── Standard batch mode: case/control per site ────────────────────
             inline_samples = None

@@ -150,22 +150,25 @@ Old per-site files are renamed `.old`. The master files are rebuilt to include t
 
 ## Scenario 2 — Multi-track anonymised cohort across sites
 
-Use this when participants are already anonymised and you need separate, independent ID sets for different data types — genetics, phenotyping, imaging, and so on. Personal identity is not tracked, so only IDP (personal data ID) is generated, not IDS. The IDT linkage key connects the data types; delete it once labelling is complete to fully sever any cross-track link.
+Use this when participants are already anonymised and you need separate, independent ID sets for different data types — genetics, phenotyping, imaging, and so on. Because there is no personal data to track, only IDS (study data IDs) are generated — no IDP. The IDT linkage key connects the data types across tracks; delete it once labelling is complete to fully sever that link.
 
 Each data type is a **track**. Tracks are declared once at `init` and saved to `study.cfg`. The input sheet defines sites and participant counts; the tracks define what ID columns every participant at every site receives.
 
-**Step 1 — save study parameters and declare tracks:**
+**Step 1 — save study parameters, declare tracks, mark as anonymised:**
 
 ```bash
 python3 idgenerator.py init \
     --study    AnonymCohort \
     --center   01 \
-    --blocks   CTNVX \
+    --blocks   CTGNVX \
     --tracks   Genetics,Phenotype \
+    --anon \
     --output   ./ids
 ```
 
-`--tracks` is stored in `study.cfg`. You do not need to repeat it on every `batch` call.
+`--tracks` and `--anon` are stored in `study.cfg`. You do not need to repeat them on every `batch` call.
+
+`--anon` is the key flag here: it tells the script to draw from the IDS pool and label output columns `IDS_Genetics`, `IDS_Phenotype` instead of IDP. Without it, the IDP (personal data) pool would be used.
 
 **Step 2 — prepare the site sheet (`wave1.txt`):**
 
@@ -186,20 +189,20 @@ python3 idgenerator.py batch \
     --seed 10
 ```
 
-No `--tracks` flag needed — it is loaded from `study.cfg`. Every participant at every site receives one IDT and one IDP per track.
+No `--tracks` flag needed — it is loaded from `study.cfg`. Every participant at every site receives one IDT and one IDS per track.
 
 Output:
 
 ```
 ids/
-  YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_ALL_N=425.txt   ← all sites combined
+  YYYYMMDD_AnonymCohort_IDS_T=Genetics+Phenotype_ALL_N=350.txt   ← all sites combined
   per_site/
-    YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_SITE=SiteA_N=200_Baseline.txt
-    YYYYMMDD_AnonymCohort_IDP_T=Genetics+Phenotype_SITE=SiteB_N=225_Baseline.txt
+    YYYYMMDD_AnonymCohort_IDS_T=Genetics+Phenotype_SITE=SiteA_N=200_Baseline.txt
+    YYYYMMDD_AnonymCohort_IDS_T=Genetics+Phenotype_SITE=SiteB_N=150_Baseline.txt
 ```
 
-Per-site columns: `IDT | IDP_Genetics | IDP_Phenotype`  
-Master ALL columns: `Site | IDT | IDP_Genetics | IDP_Phenotype`
+Per-site columns: `IDT | IDS_Genetics | IDS_Phenotype`  
+Master ALL columns: `Site | IDT | IDS_Genetics | IDS_Phenotype`
 
 **Adding participants in a later wave:**
 
@@ -212,14 +215,17 @@ python3 idgenerator.py batch \
     --seed 11
 ```
 
-**Adding a new track later:**
+**Tracks must be declared before the first batch run.** Every participant enrolled under a given track set receives IDS IDs for all of those tracks at enrolment. You cannot retroactively add a track to existing participants — doing so would require a new independent dataset with a different track tag, leaving prior participants without the new column. If you know you will eventually collect Genetics, Phenotype, and Imaging data, declare all three at `init` from the start.
 
-Re-run `init` with the updated track list to record it in `study.cfg`. The next `batch` wave assigns IDPs for all three tracks to new participants. Existing two-track files are left untouched; the new files sit alongside them and link back via IDT:
+**Starting a new parallel dataset with an additional track:**
+
+Re-running `init` with a new track list and then running `batch` begins a fresh dataset for that track combination. Existing participants are not affected. The two datasets are independent and can be linked via IDT. Use this only for a genuinely new data collection effort (e.g. an imaging sub-study with its own enrolment list):
 
 ```bash
 python3 idgenerator.py init \
-    --study AnonymCohort --center 01 --blocks CTNVX \
+    --study AnonymCohort --center 01 --blocks CTGNVX \
     --tracks Genetics,Phenotype,Imaging \
+    --anon \
     --output ./ids
 
 python3 idgenerator.py batch \
@@ -230,16 +236,15 @@ python3 idgenerator.py batch \
 
 **Single-site variant:**
 
-For a cohort at one site, skip the sheet and pass the count directly:
+For a cohort at one site, skip the sheet and pass the count directly. Note: the `baseline` command does not read `--anon` from config — it always generates IDP. Use `batch` with `--samplesize` for the anon path:
 
 ```bash
-python3 idgenerator.py baseline \
+python3 idgenerator.py batch \
     --samplesize 500 \
-    --tracks Genetics,Phenotype \
     --output ./ids
 ```
 
-Output: a single file with columns `IDT | IDP_Genetics | IDP_Phenotype`. Extend later with `extend --new-samples 100`.
+Tracks and `--anon` are loaded from `study.cfg`. Output: `IDT | IDS_Genetics | IDS_Phenotype`.
 
 ---
 
@@ -291,9 +296,9 @@ Visit numbers can be any integer ≥ 2. There is no upper limit.
 | `IDP_IDT_ALL_N=….txt` | `ids/` | Your team — personal data + temp keys. Keep confidential. |
 | `IDS_IDT_ALL_N=….txt` | `ids/` | Analysts — study data + temp keys. |
 | `IDS_IDSV{n}_ALL_…txt` | `ids/` | Analysts — baseline IDS paired with follow-up IDS. |
-| `IDP_T=…_ALL_N=….txt` | `ids/` | Multi-track cohort master — Site + IDT + one IDP column per track. |
+| `IDS_T=…_ALL_N=….txt` | `ids/` | Multi-track anonymised cohort master — Site + IDT + one IDS column per track. |
 | Per-site `IDP_IDT_T=…` | `ids/per_site/` | Reference copy per site/group (standard batch). |
-| Per-site `IDP_T=…_SITE=…` | `ids/per_site/` | Reference copy per site (multi-track batch). |
+| Per-site `IDS_T=…_SITE=…` | `ids/per_site/` | Reference copy per site (multi-track anonymised batch). |
 | `LogFile.txt` | `ids/` | Full audit trail. |
 
 The `_Baseline` suffix marks files created in the first run for a site; `_Extended` marks files after subjects were added.

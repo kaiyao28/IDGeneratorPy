@@ -25,7 +25,7 @@ IDs are assembled from a sequence of named building blocks:
 | Block | Contents | When to include |
 |-------|----------|-----------------|
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
-| `T` | Track / sample name | Multiple sample types; the value comes from the SampleName column (`--input-file`) or `--track` (`--samplesize`) |
+| `T` | Track / sample name. In standard `batch` mode the full SampleName is used. In multi-track `batch --tracks` mode only the **first character** of each track name is embedded (e.g. `G` for Genetics, `P` for Phenotype) — column headers and filenames still use the full name. | Multiple sample types |
 | `G` | Group prefix — case (`S`) or control (`C`) | `batch` mode with case/control distinction |
 | `N` | Unique random number | Always |
 | `V` | Visit number (IDP=0, IDS=1, follow-ups=n) | Longitudinal studies |
@@ -91,6 +91,8 @@ python3 idgenerator.py init \
 | `--case-prefix` | `S` | yes |
 | `--control-prefix` | `C` | yes |
 | `--visit` | `2` | yes |
+| `--tracks` | *(none)* | yes — auto-loaded by `batch` for multi-track mode |
+| `--anon` | `false` | yes — switches multi-track `batch` from IDP pool to IDS pool |
 | `--output` | `.` | yes |
 
 ---
@@ -141,6 +143,7 @@ Column names are flexible (case-insensitive). Accepted aliases:
 |------|--------|
 | `--samplesize <N>` or `<N M>` | Inline counts — alternative to `--input-file`. |
 | `--track <name>` | Track/cohort name when using `--samplesize` (default: study name). |
+| `--tracks <T1,T2,...>` | Multi-track mode: comma-separated data track names. The sheet defines sites and counts; `--tracks` defines what IDS columns each participant receives. Auto-loaded from `study.cfg` if set at `init`. |
 | `--fresh` | Treat every row as new — do not extend any existing baseline. |
 | `--shuffle` | Randomise row order in per-site IDS files. Breaks positional re-identification if the file is extracted from its context. Unshuffled by default. |
 | `--seed <int>` | Fix the random seed for reproducible output. Recorded in `LogFile.txt`. |
@@ -320,11 +323,11 @@ Three self-contained test directories are provided, one per scenario. Each can b
 
 | Directory | Scenario | Key commands |
 |-----------|----------|--------------|
-| `test_scenario1/` | Single cohort, inline counts | `batch --samplesize`, `followup` |
-| `test_scenario2/` | Multi-track anonymised cohort | `baseline --tracks`, `extend` |
+| `test_scenario1/` | Single cohort, inline counts, case/control, follow-up | `batch --samplesize`, `followup` |
+| `test_scenario2/` | Multi-track anonymised cohort, sheet input, `--anon` | `init --tracks --anon`, `batch --input-file` |
 | `test_full/` | Multi-site, multi-wave with sheet input | `batch --input-file`, `followup` |
 
-Each directory contains a `commands.sh` with the exact commands to run in order (`test_full/` uses the worked example below). `test_scenario2/` also includes `tracks.txt` for the optional multi-site batch variant.
+Each directory contains a `commands.sh` with the exact commands to run in order.
 
 ```bash
 bash test_scenario1/commands.sh

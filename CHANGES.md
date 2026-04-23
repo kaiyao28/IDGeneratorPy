@@ -20,6 +20,10 @@ This document records every difference between this Python port and the original
 ### `init`
 Saves study parameters to `study.cfg` so they do not need to be re-entered on every run. Supports `--study`, `--center`, `--digits`, `--blocks`, `--checksum`, `--case-prefix`, `--control-prefix`, `--visit`, `--output`.
 
+Two additional parameters support the multi-track anonymised cohort workflow:
+- **`--tracks`** — comma-separated list of data track names (e.g. `Genetics,Phenotype`). Saved to `study.cfg` and auto-loaded by every subsequent `batch` call; no need to repeat it per wave.
+- **`--anon`** — marks the cohort as anonymised: multi-track `batch` draws IDs from the IDS pool (40 000–69 999) and labels columns `IDS_*` instead of the IDP pool. Use when there is no personal data to track.
+
 ### `batch`
 Sheet-based ID generation for multi-site, multi-group studies. Reads a sample sheet (`.xlsx`, `.csv`, `.txt`) with `SampleName / NCases / NControls` columns and generates one IDP and one IDS file per site × group in a single run. Not present in the original.
 
@@ -30,6 +34,9 @@ Key `batch` capabilities not in the original:
 - **`--shuffle` flag** — randomises row order in per-site IDS output. Breaks positional re-identification when the file is shared outside its context.
 - **`--seed` flag** — fixes the random seed for reproducible output. Seed is recorded in `LogFile.txt`.
 - **Multi-format input** — `.xlsx` / `.xls` (requires `openpyxl`), `.csv`, `.tsv`, `.txt` all accepted natively.
+- **`--tracks` flag** — multi-track mode: the sheet defines sites and counts; `--tracks` defines what IDS columns every participant receives (`IDS_Genetics`, `IDS_Phenotype`, etc.). Tracks must be declared before the first batch run — they cannot be added retroactively to existing participants.
+- **`--samplesize` flag** — inline count mode: pass participant counts directly on the command line instead of a sheet (`--samplesize 50 80` for 50 cases and 80 controls). No input file needed.
+- **Track abbreviation** — in multi-track mode the T block inside each ID uses only the first character of the track name (e.g. `G` for Genetics, `P` for Phenotype), keeping IDs short. Column headers and filenames always use the full name.
 
 ### `add-track`
 Creates a header-only (`N=0`) baseline placeholder for a new track, ready to be extended in a later wave.
