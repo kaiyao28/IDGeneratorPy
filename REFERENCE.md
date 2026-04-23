@@ -24,9 +24,10 @@ IDs are assembled from a sequence of named building blocks:
 
 | Block | Contents | When to include |
 |-------|----------|-----------------|
+| `S` | Study name (`--study`) as a prefix | When IDs from different studies may mix (e.g. shared biobank) |
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
 | `T` | Track / sample name. In standard `batch` mode the full SampleName is used. In multi-track `batch --tracks` mode only the **first character** of each track name is embedded (e.g. `G` for Genetics, `P` for Phenotype) — column headers and filenames still use the full name. | Multiple sample types |
-| `G` | Group prefix — case (`S`) or control (`C`) | `batch` mode with case/control distinction |
+| `G` | Group prefix — case (`S`) or control (`C`) | Standard `batch` mode with case/control distinction. **Not used in multi-track `batch --tracks` mode** — G is stripped automatically; all participants at a site receive one ID regardless of case/control status. |
 | `N` | Unique random number | Always |
 | `V` | Visit number (IDP=0, IDS=1, follow-ups=n) | Longitudinal studies |
 | `X` | Check digit (one character) | Recommended for all IDs |
@@ -35,6 +36,7 @@ Recommended block strings:
 
 - `CTGNVX` — batch mode with cases and controls
 - `CTNVX` — single-track or no case/control distinction
+- Prefix with `S` (e.g. `SCTNVX`) to embed the study name at the start of every ID
 
 > **Re-identification caution:** Embedding group membership (`G`) in the ID exposes case/control status to anyone who knows the encoding. Omit `G` if blinding is required.
 
@@ -324,7 +326,7 @@ Three self-contained test directories are provided, one per scenario. Each can b
 | Directory | Scenario | Key commands |
 |-----------|----------|--------------|
 | `test_scenario1/` | Single cohort, inline counts, case/control, follow-up | `batch --samplesize`, `followup` |
-| `test_scenario2/` | Multi-track anonymised cohort, sheet input, `--anon` | `init --tracks --anon`, `batch --input-file` |
+| `test_scenario2/` | Multi-track anonymised cohort, sheet input, `--anon`, `--blocks CTNVX` | `init --tracks --anon`, `batch --input-file` |
 | `test_full/` | Multi-site, multi-wave with sheet input | `batch --input-file`, `followup` |
 
 Each directory contains a `commands.sh` with the exact commands to run in order.

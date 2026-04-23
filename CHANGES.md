@@ -96,9 +96,15 @@ All commands (except `init`) automatically load parameters from `study.cfg` if i
 
 ---
 
-## Bug fix
+## Bug fixes
 
 **ExtendBaseline wrote IDS values into the IDT column.** In the original VB.NET code, the extend operation incorrectly copied IDS values into the IDT field when appending new subjects. This left the extended file with corrupted IDT values. Fixed in this port.
+
+**Multi-track `batch` ignored NControls.** The `_generate_batch_multitrack` function read only `NCases` from each sheet row and discarded `NControls`. Sites with a case/control split (e.g. SiteB with 150 cases + 75 controls) produced only 150 IDS IDs instead of 225. Fixed: `n_participants = n_cases + n_controls`.
+
+**Multi-track `batch` produced malformed IDs when `--blocks` contained `G`.** The G building block requires a case/control group argument. In multi-track mode every participant is treated as a single unit with no group split, so `group` was always passed as an empty string. This silently shrank the ID (missing G character) and shifted all subsequent field positions (N, V, X), breaking the extend logic. Fixed: `G` is stripped from `--blocks` at the start of `_generate_batch_multitrack`. Use `--blocks CTNVX` for multi-track anonymised batch runs.
+
+**`--anon` without `--tracks` fell to the standard `generate_batch` path.** When `--anon` was saved in `study.cfg` but no `--tracks` were declared, the batch dispatch routed to the standard case/control path which always generates IDP (personal data IDs). Fixed: a dedicated branch now routes `--anon` with no tracks to `_generate_batch_multitrack` with an empty track list, producing a single plain `IDS` column.
 
 ---
 

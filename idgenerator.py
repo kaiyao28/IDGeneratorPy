@@ -58,6 +58,7 @@ Usage examples
       --input-dir ./output --output ./output
 
 Building blocks (--blocks):
+  S = Study name prefix (--study value embedded in every ID)
   C = Study center code
   T = Track / sample name
   G = Group (case prefix vs control prefix — use with 'batch' command)
@@ -65,8 +66,8 @@ Building blocks (--blocks):
   V = Visit number  (IDP=0, IDS/IDT=1, follow-ups=specified)
   X = Check digit
 
-  Recommended for batch mode: CTGNVX
-  Recommended for single-track mode: CTNVX
+  Recommended for batch mode: CTGNVX  (or SCTGNVX to prefix with study name)
+  Recommended for single-track mode: CTNVX  (or SCTNVX)
 
 Checksum algorithms (--checksum):
   none            No check digit
@@ -289,16 +290,17 @@ def format_code128(s: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_id(blocks: str, center: str, track: str, number: int, visit,
-             checksum_fn, *, group: str = "") -> str:
+             checksum_fn, *, group: str = "", study: str = "") -> str:
     """
     Assemble an ID string from building blocks and compute its check digit.
-    G block requires `group` keyword argument (e.g. "S" for cases, "C" for controls).
+    G block requires `group` kwarg.  S block requires `study` kwarg.
     """
     parts = []
     for bb in blocks:
         if   bb == "C": parts.append(center)
         elif bb == "T": parts.append(track)
         elif bb == "G": parts.append(group)
+        elif bb == "S": parts.append(study)
         elif bb == "N": parts.append(str(number))
         elif bb == "V": parts.append(str(visit))
         elif bb == "X": parts.append("[CHECKSUM]")
@@ -307,7 +309,7 @@ def build_id(blocks: str, center: str, track: str, number: int, visit,
 
 
 def field_start(blocks: str, field: str, center_len: int, track_len: int,
-                digits: int, group_len: int = 0) -> int:
+                digits: int, group_len: int = 0, study_len: int = 0) -> int:
     """Return the 0-based character position where `field` starts inside a built ID."""
     pos = 0
     for bb in blocks:
@@ -316,6 +318,7 @@ def field_start(blocks: str, field: str, center_len: int, track_len: int,
         if   bb == "C": pos += center_len
         elif bb == "T": pos += track_len
         elif bb == "G": pos += group_len
+        elif bb == "S": pos += study_len
         elif bb == "N": pos += digits
         elif bb in ("V", "X"): pos += 1
     return -1
@@ -544,16 +547,17 @@ def _read_excel(path: Path, ext: str) -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_ids_for_track(blocks, center, track_name, group, idp_nums, ids_nums, idt_nums,
-                          checksum_fn, *, shuffle=False):
+                          checksum_fn, *, shuffle=False, study: str = ""):
     """
     Build ID strings for one track/group.
     Returns (idp_ids, ids_ids, idt_ids, idp128, ids128, order).
     IDS IDs are always built; order is shuffled only when shuffle=True.
     """
-    idp_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, group=group) for n in idp_nums]
-    idt_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, group=group) for n in idt_nums]
+    kw = dict(group=group, study=study)
+    idp_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, **kw) for n in idp_nums]
+    idt_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, **kw) for n in idt_nums]
     idp128  = [format_code128(x) for x in idp_ids]
-    ids_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, group=group) for n in ids_nums]
+    ids_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, **kw) for n in ids_nums]
     ids128  = [format_code128(x) for x in ids_ids]
     order   = list(range(len(idp_ids)))
     if shuffle:
@@ -573,7 +577,7 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
     """
     idp_ids, ids_ids, idt_ids, idp128, ids128, order = _build_ids_for_track(
         blocks, center, track_name, group, idp_nums, ids_nums, idt_nums,
-        checksum_fn, shuffle=shuffle)
+        checksum_fn, shuffle=shuffle, study=study)
 
     g_tag = f"_G={group}" if group else ""
 
@@ -687,14 +691,14 @@ def generate_multitrack_baseline(study, center, track_names, sample_count,
     _log(f"ID-T pool    : {lo_idt} – {hi_idt}")
 
     idt_nums = _unique_randoms(lo_idt, hi_idt, sample_count, set())
-    idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn) for n in idt_nums]
+    idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn, study=study) for n in idt_nums]
 
     used_idp = set()
     idp_by_track = {}
     for t in track_names:
         nums = _unique_randoms(lo_idp, hi_idp, sample_count, used_idp)
         used_idp.update(nums)
-        idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in nums]
+        idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn, study=study) for n in nums]
 
     ts = timestamp()
     track_tag = "+".join(track_names)
@@ -746,26 +750,27 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
     lo_idp, hi_idp, _, _, lo_idt, hi_idt = _id_pools(digits)
 
     # Extract existing numbers to avoid collisions
-    pos_idt = field_start(blocks, "N", len(center), 0, digits)
+    s_len = len(study)
+    pos_idt = field_start(blocks, "N", len(center), 0, digits, study_len=s_len)
     used_idt = set()
     used_idp = set()
     for row in existing_rows:
         if pos_idt >= 0:
             used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
         for i, t in enumerate(track_names):
-            pos_idp = field_start(blocks, "N", len(center), len(t), digits)
+            pos_idp = field_start(blocks, "N", len(center), len(t), digits, study_len=s_len)
             if pos_idp >= 0:
                 used_idp.add(int(row[i + 1][pos_idp:pos_idp + digits]))
 
     new_idt_nums = _unique_randoms(lo_idt, hi_idt, add_n, used_idt)
-    new_idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn) for n in new_idt_nums]
+    new_idt_ids  = [build_id(blocks, center, "", n, 1, checksum_fn, study=study) for n in new_idt_nums]
 
     new_used = set(used_idp)
     new_idp_by_track = {}
     for t in track_names:
         nums = _unique_randoms(lo_idp, hi_idp, add_n, new_used)
         new_used.update(nums)
-        new_idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn) for n in nums]
+        new_idp_by_track[t] = [build_id(blocks, center, t, n, 0, checksum_fn, study=study) for n in nums]
 
     new_rows = [[new_idt_ids[i]] + [new_idp_by_track[t][i] for t in track_names]
                 for i in range(add_n)]
@@ -786,7 +791,8 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
-                        center: str, track_name: str, group: str, digits: int):
+                        center: str, track_name: str, group: str, digits: int,
+                        study_len: int = 0):
     """
     Read the numeric N-field values from an existing IDP_IDT baseline file.
     ids_file may be None when the original run did not use --shuffle.
@@ -797,7 +803,7 @@ def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
     len_c = len(center)
     len_t = len(track_name)
     len_g = len(group)
-    pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
+    pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=study_len)
 
     # IDS file: build idt_num → ids_num lookup (only if the file exists)
     idt_to_ids = {}
@@ -913,8 +919,12 @@ def _find_multitrack_site_file(study: str, site_name: str, track_tag: str,
     for d in [search_dir, search_dir / "per_site"]:
         if d.exists():
             for sfx in ("Baseline", "Extended"):
-                candidates += list(d.glob(
-                    f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
+                if track_tag:
+                    candidates += list(d.glob(
+                        f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
+                else:
+                    candidates += list(d.glob(
+                        f"*{study}_{id_type}_IDT_SITE={site_name}_*_{sfx}.txt"))
     candidates.sort()
     return candidates[-1] if candidates else None
 
@@ -990,6 +1000,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
                         ex_idp, ex_ids, ex_idt, ex_n = _read_existing_nums(
                             ids_f, idp_f, blocks, center,
                             sample_name, group_prefix, digits,
+                            study_len=len(study),
                         )
                     except ValueError as e:
                         _log(f"ERROR: {e}")
@@ -1110,16 +1121,22 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     """
     Batch-generate multi-track IDs from a sample sheet.
 
-    samples    : list of (site_name, n_participants, _) — NControls ignored
-    track_names: list of track name strings e.g. ['Genetics', 'Phenotype']
-    anon       : True  → draw from IDS pool, label columns IDS_* (anonymised cohort,
-                         no personal data tracked)
-                 False → draw from IDP pool, label columns IDP_* (personal data tracked)
+    samples    : list of (site_name, n_cases, n_controls) — totals are summed per site
+    track_names: list of track name strings e.g. ['Genetics', 'Phenotype'], or [] for single IDS
+    anon       : True  → draw from IDS pool, label columns IDS_* (anonymised cohort)
+                 False → draw from IDP pool, label columns IDP_*
 
-    Every participant receives one IDT and one ID per track.
-    Per-site output  (per_site/): IDT | {IDP|IDS}_T1 | {IDP|IDS}_T2 | ...
-    Master ALL (output_dir/)    : Site | IDT | {IDP|IDS}_T1 | ...
+    Every participant receives one IDT and one ID per track (or one plain IDS if no tracks).
+    Per-site output  (per_site/): IDT | {id_type}[_T1 | _T2 | ...]
+    Master ALL (output_dir/)    : Site | IDT | {id_type}[_T1 | ...]
+
+    G block is stripped from --blocks: multi-track mode assigns one ID per participant
+    regardless of case/control status (the distinction is preserved in the source data).
     """
+    # G block requires a group argument; multi-track assigns one ID per participant
+    # with no case/control split. Strip it so field positions stay consistent.
+    blocks = blocks.replace("G", "")
+
     checksum_fn = CHECKSUMS[checksum_name]
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -1131,15 +1148,27 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     id_type  = "IDS" if anon else "IDP"
     lo_col   = lo_ids if anon else lo_idp
     hi_col   = hi_ids if anon else hi_idp
-    id_visit = 1 if anon else 0   # IDS visit=1 (study data), IDP visit=0 (personal data)
-    track_tag = "+".join(track_names)
+    id_visit = 1 if anon else 0
 
-    # ── Planning phase: classify sites, collect existing numbers ─────────────
+    has_tracks         = bool(track_names)
+    track_tag          = "+".join(track_names) if has_tracks else ""
+    n_col_per_part     = len(track_names) if has_tracks else 1
+    track_len_in_id    = 1 if has_tracks else 0   # 1-char abbreviation, or no T block
+
+    if has_tracks:
+        file_header   = ["IDT"] + [f"{id_type}_{t}" for t in track_names]
+        master_header = ["Site", "IDT"] + [f"{id_type}_{t}" for t in track_names]
+    else:
+        file_header   = ["IDT", id_type]
+        master_header = ["Site", "IDT", id_type]
+
+    # ── Planning phase: classify sites, collect existing numbers ──────────────
     plan = []
     used_idt: set = set()
     used_col: set = set()
 
-    for site_name, n_participants, _ in samples:
+    for site_name, n_cases, n_controls in samples:
+        n_participants = n_cases + n_controls   # sum cases + controls
         if n_participants == 0:
             continue
         existing_file = _find_multitrack_site_file(study, site_name, track_tag, inp, id_type)
@@ -1149,15 +1178,21 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
                 _hdr = next(reader)
                 existing_rows = [r for r in reader if r]
             existing_n = len(existing_rows)
-            pos_idt = field_start(blocks, "N", len(center), 0, digits)
+            s_len   = len(study)
+            pos_idt = field_start(blocks, "N", len(center), 0, digits, study_len=s_len)
             for row in existing_rows:
                 if pos_idt >= 0 and row[0]:
                     used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
-            for i, t in enumerate(track_names):
-                pos_col = field_start(blocks, "N", len(center), 1, digits)  # T block = 1 char (t[0])
+            pos_col = field_start(blocks, "N", len(center), track_len_in_id, digits, study_len=s_len)
+            if has_tracks:
+                for i in range(len(track_names)):
+                    for row in existing_rows:
+                        if pos_col >= 0 and len(row) > i + 1 and row[i + 1]:
+                            used_col.add(int(row[i + 1][pos_col:pos_col + digits]))
+            else:
                 for row in existing_rows:
-                    if pos_col >= 0 and len(row) > i + 1 and row[i + 1]:
-                        used_col.add(int(row[i + 1][pos_col:pos_col + digits]))
+                    if pos_col >= 0 and len(row) > 1 and row[1]:
+                        used_col.add(int(row[1][pos_col:pos_col + digits]))
             plan.append(dict(site_name=site_name, add_n=n_participants, mode="extend",
                              existing_n=existing_n, existing_rows=existing_rows,
                              existing_file=existing_file))
@@ -1169,9 +1204,10 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         return False
 
     total_new_idt = sum(e["add_n"] for e in plan)
-    total_new_col = total_new_idt * len(track_names)
+    total_new_col = total_new_idt * n_col_per_part
 
-    _log(f"Tracks       : {', '.join(track_names)}")
+    tracks_label = ", ".join(track_names) if has_tracks else "(none — single IDS column)"
+    _log(f"Tracks       : {tracks_label}")
     _log(f"ID type      : {id_type}  ({'anonymised cohort — no personal data' if anon else 'personal data tracked'})")
     _log(f"Sites        : {len(plan)}")
     _log(f"\n{'Site':<20} {'Action':<10} {'Add':>6} {'Existing':>9}")
@@ -1181,7 +1217,8 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         _log(f"  {e['site_name']:<18} {e['mode']:<10} {e['add_n']:>6} {ex_str}")
     _log("-" * 52)
     _log(f"  New IDT to generate  : {total_new_idt}")
-    _log(f"  New {id_type} to generate : {total_new_col}  ({len(track_names)} tracks × {total_new_idt})")
+    col_detail = (f"  ({len(track_names)} tracks × {total_new_idt})" if has_tracks else "")
+    _log(f"  New {id_type} to generate : {total_new_col}{col_detail}")
     _log()
     _log(f"ID-P pool : {lo_idp} – {hi_idp}")
     _log(f"ID-S pool : {lo_ids} – {hi_ids}")
@@ -1194,7 +1231,6 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     ts = timestamp()
     idt_pos = 0
     col_pos = 0
-    file_header = ["IDT"] + [f"{id_type}_{t}" for t in track_names]
 
     for e in plan:
         site_name = e["site_name"]
@@ -1202,18 +1238,24 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         mode      = e["mode"]
 
         idt_slice = new_idt_pool[idt_pos:idt_pos + add_n]
-        idt_ids   = [build_id(blocks, center, "", n, 1, checksum_fn) for n in idt_slice]
+        idt_ids   = [build_id(blocks, center, "", n, 1, checksum_fn, study=study) for n in idt_slice]
         idt_pos  += add_n
 
-        col_by_track: dict = {}
-        for t in track_names:
-            col_slice       = new_col_pool[col_pos:col_pos + add_n]
-            col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn)
-                               for n in col_slice]
-            col_pos        += add_n
-
-        new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
-                    for i in range(add_n)]
+        if has_tracks:
+            col_by_track: dict = {}
+            for t in track_names:
+                col_slice       = new_col_pool[col_pos:col_pos + add_n]
+                col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn, study=study)
+                                   for n in col_slice]
+                col_pos        += add_n
+            new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
+                        for i in range(add_n)]
+        else:
+            col_slice = new_col_pool[col_pos:col_pos + add_n]
+            col_ids   = [build_id(blocks, center, "", n, id_visit, checksum_fn, study=study)
+                         for n in col_slice]
+            col_pos  += add_n
+            new_rows  = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
 
         if mode == "extend":
             all_file_rows = e["existing_rows"] + new_rows
@@ -1227,15 +1269,22 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             suffix        = "Baseline"
             action        = f"{add_n} new"
 
-        per_site_file = per_site_out / (
-            f"{ts}_{study}_{id_type}_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
-        )
+        if has_tracks:
+            per_site_file = per_site_out / (
+                f"{ts}_{study}_{id_type}_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
+            )
+        else:
+            per_site_file = per_site_out / (
+                f"{ts}_{study}_{id_type}_IDT_SITE={site_name}_N={total_n}_{suffix}.txt"
+            )
         _write_tsv(per_site_file, file_header, all_file_rows)
         _log(f"  [{site_name}] {action}  →  per_site/{per_site_file.name}")
 
     # ── Rebuild master ALL by re-reading every current per-site file ──────────
     all_master_rows = []
-    for f in sorted(per_site_out.glob(f"*{study}_{id_type}_T={track_tag}_SITE=*.txt")):
+    glob_pat = (f"*{study}_{id_type}_T={track_tag}_SITE=*.txt" if has_tracks
+                else f"*{study}_{id_type}_IDT_SITE=*.txt")
+    for f in sorted(per_site_out.glob(glob_pat)):
         site = get_param_from_filename(str(f), "SITE")
         with open(f, encoding="utf-8") as fh:
             lines = [ln for ln in fh.read().splitlines() if ln.strip()]
@@ -1243,11 +1292,16 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             cols = line.split("\t")
             all_master_rows.append([site] + cols)
 
-    for old in sorted(out.glob(f"*_{study}_{id_type}_T={track_tag}_ALL_*.txt")):
+    old_glob     = (f"*_{study}_{id_type}_T={track_tag}_ALL_*.txt" if has_tracks
+                    else f"*_{study}_{id_type}_IDT_ALL_*.txt")
+    master_fname = (f"{ts}_{study}_{id_type}_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
+                    if has_tracks
+                    else f"{ts}_{study}_{id_type}_IDT_ALL_N={len(all_master_rows)}.txt")
+
+    for old in sorted(out.glob(old_glob)):
         old.rename(old.with_suffix(".old"))
 
-    master_header = ["Site", "IDT"] + [f"{id_type}_{t}" for t in track_names]
-    master_file   = out / f"{ts}_{study}_{id_type}_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
+    master_file = out / master_fname
     _write_tsv(master_file, master_header, all_master_rows)
     _log(f"  Master ALL : {master_file.name}")
     _log("Done.")
@@ -1407,7 +1461,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         len_c  = len(center)
         len_t  = len(track_name)
         len_g  = len(group)
-        pos_n  = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g)
+        pos_n  = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=len(study))
 
         # IDS file is optional (only written when --shuffle was used originally)
         idt_to_ids_num = {}
@@ -1523,7 +1577,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
 
         ids_ids = [row[0] for row in rows]
         ids128  = [row[1] for row in rows]
-        ide_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, group=group)
+        ide_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, group=group, study=study)
                    for n in ide_nums]
         ide128  = [format_code128(x) for x in ide_ids]
 
@@ -1750,16 +1804,19 @@ def main():
         if not getattr(args, "tracks", None) and cfg.get("tracks"):
             args.tracks = cfg["tracks"]
 
-        if args.tracks:
-            # ── Multi-track mode: --tracks T1,T2 ──────────────────────────────
-            track_names = [t.strip() for t in args.tracks.split(",")]
+        if args.tracks or cfg.get("anon", False):
+            # ── Multi-track or anonymised mode ────────────────────────────────
+            # args.tracks already auto-loaded from cfg above; may still be None
+            # for --anon with no tracks (→ single plain IDS column, track_names=[]).
+            track_names = ([t.strip() for t in args.tracks.split(",")]
+                           if args.tracks else [])
             if args.samplesize is not None:
                 site_name = args.track or args.study
                 ss = args.samplesize
-                if len(ss) != 1:
+                if track_names and len(ss) != 1:
                     _log("ERROR: --tracks with --samplesize expects a single participant count.")
                     sys.exit(1)
-                mt_samples = [(site_name, ss[0], 0)]
+                mt_samples = [(site_name, ss[0], ss[1] if len(ss) > 1 else 0)]
             else:
                 try:
                     mt_samples = read_sample_sheet(args.input_file)
