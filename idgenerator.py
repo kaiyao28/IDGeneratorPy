@@ -10,14 +10,14 @@ Usage examples
   python idgenerator.py baseline \\
       --study MyStudy --center 01 \\
       --tracks "TrackA:100,TrackB:200" \\
-      --digits 5 --blocks CTNVX --checksum Damm_2004 \\
+      --digits 5 --blocks CRGNVX --checksum Damm_2004 \\
       --output ./output
 
 # Batch-generate baseline from a sample sheet (cases & controls per sample):
   python idgenerator.py batch \\
       --study MyStudy --center 01 \\
       --input-file samples.xlsx \\
-      --digits 5 --blocks CTGNVX --checksum Damm_2004 \\
+      --digits 5 --blocks CRGNVX --checksum Damm_2004 \\
       --case-prefix S --control-prefix C \\
       --output ./output
 
@@ -36,7 +36,7 @@ Usage examples
 # Generate follow-up visit 2 from baseline files:
   python idgenerator.py followup \\
       --study MyStudy --center 01 \\
-      --digits 5 --blocks CTNVX --checksum Damm_2004 \\
+      --digits 5 --blocks CRGNVX --checksum Damm_2004 \\
       --visit 2 --input-dir ./output --output ./output
 
 # Add a new empty track placeholder:
@@ -48,26 +48,29 @@ Usage examples
       --study MyStudy --center 01 \\
       --tracks "TrackA:100,TrackB:200" \\
       --new-samples "TrackA:20,TrackB:30" \\
-      --digits 5 --blocks CTNVX --checksum Damm_2004 \\
+      --digits 5 --blocks CRGNVX --checksum Damm_2004 \\
       --input-dir ./output --output ./output
 
 # Create external IDs linked to an existing baseline:
   python idgenerator.py external \\
       --study MyStudy --center 01 --ext-project ExtProj \\
-      --digits 5 --blocks CTNVX --checksum Damm_2004 \\
+      --digits 5 --blocks CRGNVX --checksum Damm_2004 \\
       --input-dir ./output --output ./output
 
 Building blocks (--blocks):
   S = Study name prefix (--study value embedded in every ID)
   C = Study center code
-  T = Track / sample name
-  G = Group (case prefix vs control prefix — use with 'batch' command)
+  R = Recruitment site name (SampleName from input sheet; multi-track batch only)
+  T = Data-track abbreviation (first char of --tracks name, e.g. 'G'=Genetics)
+      In standard batch mode T holds the full SampleName (site name).
+  G = Group (case prefix vs control prefix — use with standard 'batch' command)
   N = Unique random number
-  V = Visit number  (IDP=0, IDS/IDT=1, follow-ups=specified)
+  V = ID-type flag  (IDP=0, IDS/IDT=1)
   X = Check digit
 
-  Recommended for batch mode: CTGNVX  (or SCTGNVX to prefix with study name)
-  Recommended for single-track mode: CTNVX  (or SCTNVX)
+  Recommended for standard batch (case/control): CTGNVX
+  Recommended for multi-track batch:             CRTNVX  (R=site, T=track)
+  Prefix any string with S to embed the study name: SCRTNVX
 
 Checksum algorithms (--checksum):
   none            No check digit
@@ -290,14 +293,17 @@ def format_code128(s: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_id(blocks: str, center: str, track: str, number: int, visit,
-             checksum_fn, *, group: str = "", study: str = "") -> str:
+             checksum_fn, *, group: str = "", study: str = "",
+             site: str = "") -> str:
     """
     Assemble an ID string from building blocks and compute its check digit.
     G block requires `group` kwarg.  S block requires `study` kwarg.
+    R block requires `site` kwarg (recruitment site name).
     """
     parts = []
     for bb in blocks:
         if   bb == "C": parts.append(center)
+        elif bb == "R": parts.append(site)
         elif bb == "T": parts.append(track)
         elif bb == "G": parts.append(group)
         elif bb == "S": parts.append(study)
@@ -309,13 +315,15 @@ def build_id(blocks: str, center: str, track: str, number: int, visit,
 
 
 def field_start(blocks: str, field: str, center_len: int, track_len: int,
-                digits: int, group_len: int = 0, study_len: int = 0) -> int:
+                digits: int, group_len: int = 0, study_len: int = 0,
+                site_len: int = 0) -> int:
     """Return the 0-based character position where `field` starts inside a built ID."""
     pos = 0
     for bb in blocks:
         if bb == field:
             return pos
         if   bb == "C": pos += center_len
+        elif bb == "R": pos += site_len
         elif bb == "T": pos += track_len
         elif bb == "G": pos += group_len
         elif bb == "S": pos += study_len
@@ -553,7 +561,8 @@ def _build_ids_for_track(blocks, center, track_name, group, idp_nums, ids_nums, 
     Returns (idp_ids, ids_ids, idt_ids, idp128, ids128, order).
     IDS IDs are always built; order is shuffled only when shuffle=True.
     """
-    kw = dict(group=group, study=study)
+    # site=track_name so R block works in standard batch (where site = sample name)
+    kw = dict(group=group, study=study, site=track_name)
     idp_ids = [build_id(blocks, center, track_name, n, 0, checksum_fn, **kw) for n in idp_nums]
     idt_ids = [build_id(blocks, center, track_name, n, 1, checksum_fn, **kw) for n in idt_nums]
     idp128  = [format_code128(x) for x in idp_ids]
@@ -1183,7 +1192,8 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             for row in existing_rows:
                 if pos_idt >= 0 and row[0]:
                     used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
-            pos_col = field_start(blocks, "N", len(center), track_len_in_id, digits, study_len=s_len)
+            pos_col = field_start(blocks, "N", len(center), track_len_in_id, digits,
+                                  study_len=s_len, site_len=len(site_name))
             if has_tracks:
                 for i in range(len(track_names)):
                     for row in existing_rows:
@@ -1245,14 +1255,16 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             col_by_track: dict = {}
             for t in track_names:
                 col_slice       = new_col_pool[col_pos:col_pos + add_n]
-                col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn, study=study)
+                col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
+                                            study=study, site=site_name)
                                    for n in col_slice]
                 col_pos        += add_n
             new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
                         for i in range(add_n)]
         else:
             col_slice = new_col_pool[col_pos:col_pos + add_n]
-            col_ids   = [build_id(blocks, center, "", n, id_visit, checksum_fn, study=study)
+            col_ids   = [build_id(blocks, center, "", n, id_visit, checksum_fn,
+                                  study=study, site=site_name)
                          for n in col_slice]
             col_pos  += add_n
             new_rows  = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
@@ -1641,7 +1653,7 @@ def main():
     p.add_argument("--study",    required=True)
     p.add_argument("--center",   default="", help="Study center code")
     p.add_argument("--digits",   type=int, default=5)
-    p.add_argument("--blocks",   default="CTNVX")
+    p.add_argument("--blocks",   default="CRGNVX")
     p.add_argument("--checksum", default="Damm_2004", choices=list(CHECKSUMS.keys()))
     p.add_argument("--case-prefix",    default="S")
     p.add_argument("--control-prefix", default="C")
@@ -1742,7 +1754,7 @@ def main():
         _apply_config(args, cfg)
 
     # Apply hardcoded defaults for anything still None after config load
-    _defaults = dict(center="", digits=5, blocks="CTNVX",
+    _defaults = dict(center="", digits=5, blocks="CRGNVX",
                      checksum="Damm_2004", case_prefix="S", control_prefix="C", visit=2)
     for attr, val in _defaults.items():
         if getattr(args, attr, None) is None:
@@ -1765,6 +1777,10 @@ def main():
             cfg_data["tracks"] = args.tracks
         if getattr(args, "anon", False):
             cfg_data["anon"] = True
+        if "T" in args.blocks and not getattr(args, "tracks", None):
+            print("WARNING: T is in --blocks but --tracks is not declared. "
+                  "T embeds a data-track abbreviation and has no meaning without --tracks. "
+                  "Use R for the recruitment site instead, or add --tracks.")
         _save_config(cfg_data, args.output)
         if cfg:
             print("Previous config overwritten.")
@@ -1803,6 +1819,10 @@ def main():
         # Auto-load tracks from study.cfg when not supplied on the command line
         if not getattr(args, "tracks", None) and cfg.get("tracks"):
             args.tracks = cfg["tracks"]
+
+        if "T" in args.blocks and not getattr(args, "tracks", None) and not cfg.get("tracks"):
+            _log("WARNING: T is in --blocks but no --tracks are declared. "
+                 "T will repeat the site name — use R for site, or declare --tracks at init.")
 
         if args.tracks or cfg.get("anon", False):
             # ── Multi-track or anonymised mode ────────────────────────────────

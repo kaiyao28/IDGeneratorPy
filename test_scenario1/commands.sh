@@ -12,7 +12,7 @@ python3 idgenerator.py init \
     --study    Cohort1 \
     --center   01 \
     --digits   5 \
-    --blocks   CTGNVX \
+    --blocks   CRGNVX \
     --checksum Damm_2004 \
     --case-prefix    S \
     --control-prefix C \

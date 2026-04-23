@@ -15,6 +15,21 @@ This document records every difference between this Python port and the original
 
 ---
 
+## New building block: `R` (recruitment site)
+
+The original building block set had `T` serve double duty — in standard batch mode it embedded the recruitment site name; in multi-track mode it embedded the data-track abbreviation. This made the two cases inconsistent and made the ID ambiguous at a glance.
+
+A new `R` block has been added for the recruitment site name (`SampleName` from the input sheet). `T` retains its original meaning in standard mode (full site name) for backward compatibility, but in multi-track mode `T` holds the data-track abbreviation and `R` holds the site name:
+
+```
+Standard batch   --blocks CTGNVX  →  01SiteAS123451X   (T = site)
+Multi-track      --blocks CRTNVX  →  01SiteAG123451X   (R = site, T = track abbreviation)
+```
+
+Existing studies using `--blocks CTNVX` in multi-track mode continue to work unchanged (T = track abbreviation, site in filename only). Add `R` to the blocks string when you want the site name visible in every ID.
+
+---
+
 ## New building block: `S` (study name prefix)
 
 The original building block set was `C`, `T`, `G`, `N`, `V`, `X`. This port adds `S`, which embeds the study name (`--study`) as a prefix at the start of every ID:
@@ -51,7 +66,7 @@ Key `batch` capabilities not in the original:
 - **Multi-format input** — `.xlsx` / `.xls` (requires `openpyxl`), `.csv`, `.tsv`, `.txt` all accepted natively.
 - **`--tracks` flag** — multi-track mode: the sheet defines sites and counts; `--tracks` defines what IDS columns every participant receives (`IDS_Genetics`, `IDS_Phenotype`, etc.). Tracks must be declared before the first batch run — they cannot be added retroactively to existing participants.
 - **`--samplesize` flag** — inline count mode: pass participant counts directly on the command line instead of a sheet (`--samplesize 50 80` for 50 cases and 80 controls). No input file needed.
-- **Track abbreviation** — in multi-track mode the T block inside each ID uses only the first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype), keeping IDs short. Column headers and filenames always use the full name. Note: in the original programme T always held the recruitment site name; in multi-track mode it holds the data-track abbreviation instead and the site name moves to the filename. Sites and data tracks are independent dimensions — see REFERENCE.md.
+- **Track abbreviation** — in multi-track mode the T block holds the first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype). Column headers and filenames always use the full name. Use the new `R` block alongside `T` to also embed the recruitment site name in every ID (`--blocks CRTNVX`). Sites and data tracks are independent dimensions — see REFERENCE.md.
 
 ### `add-track`
 Creates a header-only (`N=0`) baseline placeholder for a new track, ready to be extended in a later wave.

@@ -27,10 +27,11 @@ git clone https://github.com/kaiyao28/IDGeneratorPy.git
 cd IDGeneratorPy
 
 python3 idgenerator.py init \
-    --study  MyStudy \
-    --center 01 \
-    --blocks SCTNVX \
-    --output ./ids
+    --study    MyStudy \
+    --center   01 \
+    --blocks   CRGNVX \
+    --checksum Damm_2004 \
+    --output   ./ids
 ```
 
 `init` writes `study.cfg`; every subsequent command loads it automatically. Set `--blocks`, `--digits`, `--checksum` here — not on every batch call.
@@ -41,35 +42,45 @@ python3 idgenerator.py init \
 
 `--blocks` is a string of letters that defines what appears in every ID, in order. The only required letter is `N` — the unique random number. Everything else is an optional label you wrap around it so the ID is self-describing at a glance.
 
-For example, `--blocks SCTNVX` with `--study MyStudy --center 01` produces this for a case participant at SiteA:
+Standard batch — `--blocks SCRGNVX` with `--study MyStudy --center 01`, case participant at SiteA:
 
 ```
 MyStudy · 01     · SiteA · S     · 12345  · 1  · 7
-   S        C        T       G       N       V    X
- study   center   track   group   random  type check
+   S        C        R       G       N       V    X
+ study   center   site    group   random  type check
                           (case)  number
+```
+
+Multi-track batch — `--blocks SCRTNVX`, site SiteA, track Genetics:
+
+```
+MyStudy · 01     · SiteA · G     · 12345  · 1  · 7
+   S        C        R       T       N       V    X
+ study   center   site    track   random  type check
+                         (abbrev) number
 ```
 
 Each letter maps to one segment:
 
 | Letter | What it adds | Notes |
 |--------|-------------|-------|
-| `S` | Study name (`--study`) | Useful when IDs from different studies may appear in the same dataset |
+| `S` | Study name (`--study`) | Include when IDs from different studies may appear in the same dataset |
 | `C` | Center code (`--center`) | Include for multi-center studies |
-| `T` | Site / sample name | Comes from the input sheet or `--track`; first character used in multi-track mode |
-| `G` | Case or control prefix | Default `S` for cases, `C` for controls — change with `--case-prefix` / `--control-prefix` |
-| `N` | Unique random number | **Required.** The core of the ID |
-| `V` | ID-type flag | **All three ID types use the same `--blocks` pattern; `V` is the only field whose value differs:** `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter — omit if you don't need to distinguish IDP from IDS at a glance |
-| `X` | Check digit | A single digit computed from the rest of the ID. If anyone misreads or mistypes one character on a tube label or spreadsheet, the check digit catches it. Include for physical labels; safe to omit for digital-only workflows |
+| `R` | Recruitment site name | `SampleName` from the input sheet |
+| `T` | Data-track abbreviation | First character of each `--tracks` name (`G`=Genetics, `P`=Phenotype). **Requires `--tracks` declared at `init`** — without it T repeats the site name. Omit if no tracks declared |
+| `G` | Case/control prefix | Default `S` cases, `C` controls — change with `--case-prefix` / `--control-prefix`. Stripped automatically in multi-track mode |
+| `N` | Unique random number | **Required** |
+| `V` | ID-type flag | `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter. Omit if you don't need to tell IDP from IDS at a glance |
+| `X` | Check digit | Computed from the rest of the ID — catches transcription errors on tube labels. Safe to omit for digital-only workflows |
 
 Common starting points:
 
-| `--blocks` | Example ID | When to use |
-|------------|-----------|------------|
-| `SCTNVX` | `MyStudy01SiteAS123451X` | Full labels with study prefix and checksum |
-| `CTGNVX` | `01SiteAS123451X` | Standard multi-site case/control batch |
-| `CTNVX` | `01SiteA123451X` | No case/control distinction |
-| `SCN` | `MyStudy0112345` | Minimal — anonymised cohort (Scenario 2) |
+| `--blocks` | Mode | Example ID | When to use |
+|------------|------|-----------|------------|
+| `CRGNVX` | Standard | `01SiteAS123451X` | Multi-site case/control |
+| `CRNVX` | Standard | `01SiteA123451X` | No case/control distinction |
+| `CRTNVX` | Multi-track | `01SiteAG123451X` | Site + track both visible |
+| `SCN` | Anonymised | `MyStudy0112345` | Minimal — Scenario 2 |
 
 ### Choosing `--digits`
 
@@ -142,7 +153,15 @@ python3 idgenerator.py batch --input-file wave1.txt --output ./ids --seed 10
 python3 idgenerator.py batch --input-file wave2.txt --output ./ids --seed 11
 ```
 
-**Tracks** — if different data types (genetics, phenotyping…) need separate independent ID sets, declare them at `init` with `--tracks Genetics,Phenotype`. Each participant then gets `IDS_Genetics` and `IDS_Phenotype` columns. Tracks must be declared before the first batch run. See [REFERENCE.md](REFERENCE.md) for details.
+**Tracks** — if different data types (genetics, phenotyping…) need separate independent ID sets, declare them at `init` with `--tracks Genetics,Phenotype`. Each participant then gets `IDS_Genetics` and `IDS_Phenotype` columns. Tracks must be declared before the first batch run.
+
+```bash
+# Declare at init — T must be in --blocks to embed the track abbreviation in each ID
+python3 idgenerator.py init --blocks CRTNVX --tracks Genetics,Phenotype --output ./ids
+
+# Create an empty placeholder for a new track, ready to extend later
+python3 idgenerator.py add-track --track Imaging --output ./ids
+```
 
 ---
 

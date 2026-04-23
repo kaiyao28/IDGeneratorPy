@@ -22,7 +22,7 @@ python3 idgenerator.py init \
     --study    AnonymCohort \
     --center   01 \
     --digits   5 \
-    --blocks   CTNVX \
+    --blocks   CRTNVX \
     --checksum Damm_2004 \
     --tracks   Genetics \
     --anon \
@@ -61,7 +61,7 @@ python3 idgenerator.py batch \
 #       --study    AnonymCohort \
 #       --center   01 \
 #       --digits   5 \
-#       --blocks   CTNVX \
+#       --blocks   CRTNVX \
 #       --checksum Damm_2004 \
 #       --tracks   Genetics,Phenotype,Imaging \
 #       --anon \

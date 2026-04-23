@@ -34,7 +34,8 @@ IDs are assembled from a sequence of named building blocks:
 |-------|----------|-----------------|
 | `S` | Study name (`--study`) as a prefix | When IDs from different studies may mix (e.g. shared biobank) |
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
-| `T` | **Standard mode:** full `SampleName` from the input sheet (i.e. the recruitment site). **Multi-track mode (`--tracks`):** first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype) — the site name moves to the filename only. | Always useful; meaning shifts by mode (see below) |
+| `R` | Recruitment site name — `SampleName` from the input sheet | Use in multi-track mode to embed the site name alongside `T` |
+| `T` | Data-track abbreviation — first character of each `--tracks` name (e.g. `G` for Genetics, `P` for Phenotype). **Requires `--tracks` declared at `init`** — without it T has no meaning and will repeat the site name (same as R). Use `R` + `T` together in multi-track mode. `init` warns if T is in `--blocks` but `--tracks` is not set | Only when `--tracks` is declared at `init`; must be included when using `add-track` |
 | `G` | Group prefix — case (`S`) or control (`C`) | Standard `batch` mode with case/control distinction. **Not used in multi-track `batch --tracks` mode** — G is stripped automatically; all participants at a site receive one ID regardless of case/control status. |
 | `N` | Unique random number | Always |
 | `V` | ID-type flag — `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter; follow-ups use a `V2_` prefix on the full baseline IDS instead | Include to distinguish IDP from IDS at a glance |
@@ -42,32 +43,51 @@ IDs are assembled from a sequence of named building blocks:
 
 Recommended block strings:
 
-- `CTGNVX` — batch mode with cases and controls
-- `CTNVX` — single-track or no case/control distinction
-- Prefix with `S` (e.g. `SCTNVX`) to embed the study name at the start of every ID
+| String | Mode | What you get |
+|--------|------|-------------|
+| `CRGNVX` | Standard batch | Site (`R`) + case/control prefix in every ID |
+| `CRNVX` | Standard batch | Site (`R`), no case/control distinction |
+| `CRTNVX` | Multi-track batch | Both site (`R`) and track abbreviation (`T`) in every ID |
+| `CTNVX` | Multi-track batch | Track abbreviation only — site in filename, not in ID |
+
+Prefix any string with `S` (e.g. `SCRTNVX`) to embed the study name at the start of every ID.
 
 > **Re-identification caution:** Embedding group membership (`G`) in the ID exposes case/control status to anyone who knows the encoding. Omit `G` if blinding is required.
 
 ### Sites vs data tracks — two independent dimensions
 
-**Site** (`SampleName` in the input sheet) is where a participant was recruited — e.g. `SiteA`, `SiteB`. Sites are rows in the sheet; each site generates its own output file.
+**Site** (`SampleName` in the input sheet, embedded by `R` block) is where a participant was recruited — e.g. `SiteA`, `SiteB`. Sites are rows in the sheet; each site generates its own output file.
 
-**Data track** (`--tracks`) is what type of data is collected per participant — e.g. `Genetics`, `Phenotype`. Tracks are declared once at `init`; every participant gets one IDS per track.
+**Data track** (`--tracks`, embedded by `T` block in multi-track mode) is what type of data is collected per participant — e.g. `Genetics`, `Phenotype`. Tracks are declared once at `init`; every participant gets one IDS per track.
 
 These two dimensions are fully independent:
 
-| Setup | `--tracks` at init | Input sheet | Each participant receives |
-|-------|--------------------|-------------|--------------------------|
-| Multiple sites, single IDS | *(omit)* | SiteA, SiteB, … | one IDS |
-| Multiple sites, multiple IDS | `Genetics,Phenotype` | SiteA, SiteB, … | `IDS_Genetics` + `IDS_Phenotype` |
+| Setup | `--tracks` at init | Input sheet | Recommended `--blocks` | Each participant receives |
+|-------|--------------------|-------------|------------------------|--------------------------|
+| Multiple sites, single IDS | *(omit)* | SiteA, SiteB, … | `CTGNVX` | one IDS, T = site name |
+| Multiple sites, multiple IDS | `Genetics,Phenotype` | SiteA, SiteB, … | `CRTNVX` | `IDS_Genetics` + `IDS_Phenotype`, R = site, T = track abbreviation |
 
-The `T` block in the ID encodes different things in each mode — in standard mode it holds the site name; in multi-track mode it holds the track abbreviation and the site is recorded in the filename only.
+In standard batch mode there is no separate track concept — `T` is not used. In multi-track mode `T` holds the data-track abbreviation; use `R` + `T` together to show both site and track in every ID.
 
-Example ID with `CTGNVX`, center `01`, track `Sample001`, group `S`, N=`12345`, visit `1`:
+**Standard batch** — `--blocks SCRGNVX`, study `MyStudy`, center `01`, site `SiteA`, case participant:
+
 ```
-01Sample001S123451X
+MyStudy · 01     · SiteA · S     · 12345  · 1    · 7
+   S        C        R       G       N       V      X
+ study   center   site    group   random  id-type check
+                          (case)  number
 ```
-where `X` is the computed check digit.
+
+**Multi-track batch** — `--blocks SCRTNVX`, same study/center/site, track `Genetics` (no G — stripped automatically):
+
+```
+MyStudy · 01     · SiteA · G     · 12345  · 1    · 7
+   S        C        R       T       N       V      X
+ study   center   site    track   random  id-type check
+                         (abbrev) number
+```
+
+`X` is computed from the preceding characters — it is not stored separately.
 
 ---
 
@@ -98,7 +118,7 @@ python3 idgenerator.py init \
     --study           MyStudy \
     --center          01 \
     --digits          5 \
-    --blocks          CTGNVX \
+    --blocks          CRGNVX \
     --checksum        Damm_2004 \
     --case-prefix     S \
     --control-prefix  C \
@@ -111,7 +131,7 @@ python3 idgenerator.py init \
 | `--study` | *(required)* | yes |
 | `--center` | `""` | yes |
 | `--digits` | `5` | yes |
-| `--blocks` | `CTNVX` | yes |
+| `--blocks` | `CRGNVX` | yes |
 | `--checksum` | `Damm_2004` | yes |
 | `--case-prefix` | `S` | yes |
 | `--control-prefix` | `C` | yes |
@@ -408,7 +428,7 @@ Adds 18; running total N = 192
 # Step 1 — save study parameters
 python3 idgenerator.py init \
     --study TestStudy --center 01 \
-    --digits 5 --blocks CTGNVX --checksum Damm_2004 \
+    --digits 5 --blocks CRGNVX --checksum Damm_2004 \
     --case-prefix S --control-prefix C --visit 2 \
     --output test_full/ids
 
