@@ -51,7 +51,7 @@ Key `batch` capabilities not in the original:
 - **Multi-format input** — `.xlsx` / `.xls` (requires `openpyxl`), `.csv`, `.tsv`, `.txt` all accepted natively.
 - **`--tracks` flag** — multi-track mode: the sheet defines sites and counts; `--tracks` defines what IDS columns every participant receives (`IDS_Genetics`, `IDS_Phenotype`, etc.). Tracks must be declared before the first batch run — they cannot be added retroactively to existing participants.
 - **`--samplesize` flag** — inline count mode: pass participant counts directly on the command line instead of a sheet (`--samplesize 50 80` for 50 cases and 80 controls). No input file needed.
-- **Track abbreviation** — in multi-track mode the T block inside each ID uses only the first character of the track name (e.g. `G` for Genetics, `P` for Phenotype), keeping IDs short. Column headers and filenames always use the full name.
+- **Track abbreviation** — in multi-track mode the T block inside each ID uses only the first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype), keeping IDs short. Column headers and filenames always use the full name. Note: in the original programme T always held the recruitment site name; in multi-track mode it holds the data-track abbreviation instead and the site name moves to the filename. Sites and data tracks are independent dimensions — see REFERENCE.md.
 
 ### `add-track`
 Creates a header-only (`N=0`) baseline placeholder for a new track, ready to be extended in a later wave.

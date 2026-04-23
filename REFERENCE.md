@@ -34,7 +34,7 @@ IDs are assembled from a sequence of named building blocks:
 |-------|----------|-----------------|
 | `S` | Study name (`--study`) as a prefix | When IDs from different studies may mix (e.g. shared biobank) |
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
-| `T` | Track / sample name. In standard `batch` mode the full SampleName is used. In multi-track `batch --tracks` mode only the **first character** of each track name is embedded (e.g. `G` for Genetics, `P` for Phenotype) — column headers and filenames still use the full name. | Multiple sample types |
+| `T` | **Standard mode:** full `SampleName` from the input sheet (i.e. the recruitment site). **Multi-track mode (`--tracks`):** first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype) — the site name moves to the filename only. | Always useful; meaning shifts by mode (see below) |
 | `G` | Group prefix — case (`S`) or control (`C`) | Standard `batch` mode with case/control distinction. **Not used in multi-track `batch --tracks` mode** — G is stripped automatically; all participants at a site receive one ID regardless of case/control status. |
 | `N` | Unique random number | Always |
 | `V` | ID-type flag — `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter; follow-ups use a `V2_` prefix on the full baseline IDS instead | Include to distinguish IDP from IDS at a glance |
@@ -47,6 +47,21 @@ Recommended block strings:
 - Prefix with `S` (e.g. `SCTNVX`) to embed the study name at the start of every ID
 
 > **Re-identification caution:** Embedding group membership (`G`) in the ID exposes case/control status to anyone who knows the encoding. Omit `G` if blinding is required.
+
+### Sites vs data tracks — two independent dimensions
+
+**Site** (`SampleName` in the input sheet) is where a participant was recruited — e.g. `SiteA`, `SiteB`. Sites are rows in the sheet; each site generates its own output file.
+
+**Data track** (`--tracks`) is what type of data is collected per participant — e.g. `Genetics`, `Phenotype`. Tracks are declared once at `init`; every participant gets one IDS per track.
+
+These two dimensions are fully independent:
+
+| Setup | `--tracks` at init | Input sheet | Each participant receives |
+|-------|--------------------|-------------|--------------------------|
+| Multiple sites, single IDS | *(omit)* | SiteA, SiteB, … | one IDS |
+| Multiple sites, multiple IDS | `Genetics,Phenotype` | SiteA, SiteB, … | `IDS_Genetics` + `IDS_Phenotype` |
+
+The `T` block in the ID encodes different things in each mode — in standard mode it holds the site name; in multi-track mode it holds the track abbreviation and the site is recorded in the filename only.
 
 Example ID with `CTGNVX`, center `01`, track `Sample001`, group `S`, N=`12345`, visit `1`:
 ```
@@ -104,6 +119,15 @@ python3 idgenerator.py init \
 | `--tracks` | *(none)* | yes — auto-loaded by `batch` for multi-track mode |
 | `--anon` | `false` | yes — switches multi-track `batch` from IDP pool to IDS pool |
 | `--output` | `.` | yes |
+
+**Multi-center studies:** `--center` is a single fixed code embedded in every ID. Run `init` once per center in a separate output folder:
+
+```bash
+python3 idgenerator.py init --study MyStudy --center 01 --blocks CTGNVX --output ./center01/ids
+python3 idgenerator.py init --study MyStudy --center 02 --blocks CTGNVX --output ./center02/ids
+```
+
+Each folder maintains its own independent number pool. IDs remain globally unique because the `C` block distinguishes them (`01SiteA12345…` vs `02SiteA12345…`). A new center can be added at any time — create a new folder and run `init`. The center code cannot be changed after IDs have been generated in a folder (it is baked into every ID string and the extend logic relies on its length being constant). To merge data across centers, concatenate the master `_ALL_` files from each folder.
 
 ---
 

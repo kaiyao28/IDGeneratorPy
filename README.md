@@ -35,6 +35,8 @@ python3 idgenerator.py init \
 
 `init` writes `study.cfg`; every subsequent command loads it automatically. Set `--blocks`, `--digits`, `--checksum` here — not on every batch call.
 
+**Multi-center:** give each center its own output folder with a different `--center` code. New centers can be added at any time. See [REFERENCE.md](REFERENCE.md) for details.
+
 ### Choosing `--blocks`
 
 `--blocks` is a string of letters that defines what appears in every ID, in order. The only required letter is `N` — the unique random number. Everything else is an optional label you wrap around it so the ID is self-describing at a glance.
