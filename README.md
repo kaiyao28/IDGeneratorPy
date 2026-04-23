@@ -56,6 +56,8 @@ Examples:
 | `CTGNVX` | `01SiteAS123451X` | Standard batch with case/control |
 | `SCN` | `MyStudy0112345` | Minimal anonymised cohort (Scenario 2) |
 
+For `SCTNVX` with `--study MyStudy --center 01`, a case participant at SiteA gets `MyStudy01SiteA`**`S`**`12345`**`1X`** — each segment comes directly from its flag. The track (`T`) is the site name from the input sheet; the group (`G`) is the case prefix (default `S`) or control prefix (default `C`), both changeable at `init` with `--case-prefix` and `--control-prefix`.
+
 `N` is the only required block — it is the unique random number that makes each ID distinct. All other blocks are optional prefixes around it.
 
 **`--digits`** sets how many digits `N` uses (default `5`), which determines your maximum total enrolment across all waves:
