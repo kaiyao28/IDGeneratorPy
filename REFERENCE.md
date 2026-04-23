@@ -16,6 +16,14 @@ Each participant receives three linked IDs drawn from separate random number poo
 
 The pool split ensures IDP and IDS numbers never collide and cannot be confused. Digit count is set by `--digits` (default: 5); the three pools always occupy the lower third, middle third, and upper third of the available range.
 
+| `--digits` | Max participants |
+|-----------|----------------|
+| `5` (default) | ~30,000 |
+| `6` | ~300,000 |
+| `7` | ~3,000,000 |
+
+Set `--digits` once at `init` — it cannot be changed after IDs have been generated. Follow-up visits do not consume pool numbers (they prefix the existing IDS rather than drawing new numbers). If you need more capacity, start a fresh study in a new output folder with a higher digit count.
+
 ---
 
 ## Building blocks (`--blocks`)
@@ -29,7 +37,7 @@ IDs are assembled from a sequence of named building blocks:
 | `T` | Track / sample name. In standard `batch` mode the full SampleName is used. In multi-track `batch --tracks` mode only the **first character** of each track name is embedded (e.g. `G` for Genetics, `P` for Phenotype) — column headers and filenames still use the full name. | Multiple sample types |
 | `G` | Group prefix — case (`S`) or control (`C`) | Standard `batch` mode with case/control distinction. **Not used in multi-track `batch --tracks` mode** — G is stripped automatically; all participants at a site receive one ID regardless of case/control status. |
 | `N` | Unique random number | Always |
-| `V` | Visit number (IDP=0, IDS=1, follow-ups=n) | Longitudinal studies |
+| `V` | ID-type flag — `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter; follow-ups use a `V2_` prefix on the full baseline IDS instead | Include to distinguish IDP from IDS at a glance |
 | `X` | Check digit (one character) | Recommended for all IDs |
 
 Recommended block strings:
@@ -101,7 +109,7 @@ python3 idgenerator.py init \
 
 ### `batch` — generate IDs from inline counts or a sample sheet
 
-The main command. Generates one IDP and one IDS file per site × group. Accepts either inline counts on the command line or a sample sheet file.
+The main command. In standard mode generates one IDP and one IDS file per site × group. With `--anon` (set at `init`) generates IDS only — no personal IDP. Accepts either inline counts on the command line or a sample sheet file.
 
 **Inline mode** — no input file needed:
 

@@ -15,6 +15,21 @@ This document records every difference between this Python port and the original
 
 ---
 
+## New building block: `S` (study name prefix)
+
+The original building block set was `C`, `T`, `G`, `N`, `V`, `X`. This port adds `S`, which embeds the study name (`--study`) as a prefix at the start of every ID:
+
+```
+--blocks CTNVX   →  01SiteA123451X
+--blocks SCTNVX  →  MyStudy01SiteA123451X
+```
+
+`S` is optional. Include it when IDs from different studies may appear in the same dataset or file. All three ID types (IDP, IDS, IDT) receive the same prefix — the `V` block distinguishes them (`0` = IDP, `1` = IDS/IDT).
+
+The original programme had no equivalent; the study name appeared only in filenames.
+
+---
+
 ## New commands
 
 ### `init`
@@ -44,6 +59,15 @@ Creates a header-only (`N=0`) baseline placeholder for a new track, ready to be 
 ---
 
 ## Changes to existing behaviour
+
+### `V` block redefined as ID-type flag
+
+In the original programme the `V` building block was a mutable visit counter — it was `1` at baseline and incremented to `2`, `3`, … at each follow-up visit. This port redefines `V` as a fixed **ID-type flag**:
+
+- `V = 0` → the ID is an **IDP** (personal data)
+- `V = 1` → the ID is an **IDS** (study data) or **IDT** (linkage key)
+
+The value never changes after the ID is generated. Visit information is encoded separately via the `V2_` prefix on the full baseline IDS (see below). This makes it unambiguous whether a given string is a personal or study ID, even without the filename for context.
 
 ### Follow-up IDs — prefix approach
 
