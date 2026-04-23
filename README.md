@@ -58,25 +58,37 @@ Two flags to set if your cohort collects multiple data types (genetics, phenotyp
 
 ## Scenario 1 — Single cohort, specifying counts directly
 
-> **Before running any batch command, make sure you have run `init` once** (see Setup above) so that `study.cfg` exists in your output directory.
+Use this when your study has one cohort and you want to assign IDs without creating an input file. Run `init` once to save your settings, then pass participant counts directly on the command line with `--samplesize`.
 
-Use this when your study has one cohort and you want to assign IDs without creating an input file. Pass the sample size directly on the command line with `--samplesize`.
-
-**No case/control distinction** (`--blocks CTNVX`, one number = total N):
+**Step 1 — init** (set `--blocks` here, not on every batch call):
 
 ```bash
-python3 idgenerator.py batch \
-    --samplesize 5000 \
+# No case/control distinction
+python3 idgenerator.py init \
+    --study  MyStudy \
+    --center 01 \
     --blocks CTNVX \
+    --output ./ids
+
+# With cases and controls
+python3 idgenerator.py init \
+    --study  MyStudy \
+    --center 01 \
+    --blocks CTGNVX \
     --output ./ids
 ```
 
-**With cases and controls** (`--blocks CTGNVX`, two numbers = NCases NControls):
+**Step 2 — generate IDs** (one number = total N; two numbers = NCases NControls):
 
 ```bash
+# No case/control distinction
+python3 idgenerator.py batch \
+    --samplesize 5000 \
+    --output ./ids
+
+# With cases and controls
 python3 idgenerator.py batch \
     --samplesize 50 80 \
-    --blocks CTGNVX \
     --output ./ids
 ```
 
