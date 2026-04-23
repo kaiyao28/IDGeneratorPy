@@ -56,6 +56,8 @@ See [REFERENCE.md](REFERENCE.md) for full details.
 
 ## Scenario 1 — Assign IDs by count
 
+Use this when you are recruiting participants into a new study and want to assign IDP + IDS + IDT as people enrol. IDs are generated in batches; later waves extend the existing records automatically — no ID is ever reused. Deleting the IDT column at any point fully severs the link between personal and study data.
+
 Run `init` first (see above), then:
 
 ```bash
@@ -76,7 +78,7 @@ python3 idgenerator.py batch --samplesize 10 20 --output ./ids
 
 ## Scenario 2 — Assign IDS keys to an anonymised cohort
 
-Use this when participants are already anonymous and you need uniform study-wide linkage keys. `--anon` tells the script to generate IDS (study data IDs) only — no personal IDP is created.
+Use this when participants are already anonymous but have inconsistent or site-specific identifiers, and you need a single uniform key for data linkage. Only IDS is generated — no personal IDP. The IDT links records across data types; delete it once labelling is complete. `--anon` switches the script to this mode.
 
 ```bash
 python3 idgenerator.py init \
