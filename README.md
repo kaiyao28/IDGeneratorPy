@@ -16,7 +16,8 @@ All three are drawn from separate random number pools so they can never be confu
 ## Requirements
 
 - Python 3.7+
-- Excel input (`.xlsx`): `pip install openpyxl`
+- `.txt` / `.csv` input: no dependencies
+- Excel input (`.xlsx` / `.xls`): `pip install openpyxl`
 
 ---
 
