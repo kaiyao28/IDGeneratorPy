@@ -1,6 +1,12 @@
 # IDGeneratorPy
 
-Cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator) (Olden et al. 2016, University of Regensburg). Generates randomized participant IDs (IDP / IDS / IDT) for clinical and epidemiological studies. Deleting the IDT linkage column fully severs the link between personal and study data.
+Cross-platform Python port of [idGenerator](https://github.com/mpmky/idGenerator) (Olden et al. 2016, University of Regensburg). Generates three linked but independent IDs for each participant:
+
+- **IDP** (Personal) — ties to identifying information such as name, date of birth, and contact details. Held only by study personnel.
+- **IDS** (Study) — ties to scientific data (measurements, samples, questionnaires). Shared with analysts. Contains no personal information.
+- **IDT** (Temporary linkage key) — the only bridge between IDP and IDS. Deleting it permanently severs the link, making the IDS file fully anonymous while keeping the scientific dataset intact.
+
+All three are drawn from separate random number pools so they can never be confused with one another.
 
 > Full command reference, flag descriptions, and a multi-wave worked example: [REFERENCE.md](REFERENCE.md)  
 > Changes and new features relative to the original VB.NET programme: [CHANGES.md](CHANGES.md)
@@ -50,7 +56,17 @@ Examples:
 | `CTGNVX` | `01SiteAS123451X` | Standard batch with case/control |
 | `SCN` | `MyStudy0112345` | Minimal anonymised cohort (Scenario 2) |
 
-See [REFERENCE.md](REFERENCE.md) for full details.
+`N` is the only required block — it is the unique random number that makes each ID distinct. All other blocks are optional prefixes around it.
+
+**`--digits`** sets how many digits `N` uses (default `5`), which determines your maximum total enrolment across all waves:
+
+| `--digits` | Max participants |
+|-----------|----------------|
+| `5` (default) | ~30,000 |
+| `6` | ~300,000 |
+| `7` | ~3,000,000 |
+
+Set this once at `init` and do not change it — all IDs in a study must use the same digit count. Follow-up visits do not count toward the limit. See [REFERENCE.md](REFERENCE.md) for full details.
 
 ---
 
