@@ -35,32 +35,43 @@ python3 idgenerator.py init \
 
 `init` writes `study.cfg`; every subsequent command loads it automatically. Set `--blocks`, `--digits`, `--checksum` here — not on every batch call.
 
-**`--blocks`** controls what goes into each ID. Every block is optional except `N` (the unique random number):
+### Choosing `--blocks`
 
-| Block | Adds to ID | Include when… |
-|-------|-----------|---------------|
-| `S` | Study name | IDs from different studies may mix |
-| `C` | Center code | Multi-center study |
-| `T` | Track / sample name | Multiple sample types |
-| `G` | Case (`S`) or control (`C`) prefix | Case/control distinction needed in ID |
-| `N` | Unique random number | **Always required** |
-| `V` | Visit digit (`0`=IDP, `1`=IDS) | Useful when IDP and IDS coexist |
-| `X` | Check digit | Recommended if IDs are hand-transcribed on labels |
+`--blocks` is a string of letters that defines what appears in every ID, in order. The only required letter is `N` — the unique random number. Everything else is an optional label you wrap around it so the ID is self-describing at a glance.
 
-Examples:
+For example, `--blocks SCTNVX` with `--study MyStudy --center 01` produces this for a case participant at SiteA:
 
-| `--blocks` | Example ID | Use case |
-|------------|-----------|---------|
-| `SCTNVX` | `MyStudy01SiteAS123451X` | Full: study + center + track + group + checksum |
-| `CTNVX` | `01SiteA123451X` | Standard single-study batch |
-| `CTGNVX` | `01SiteAS123451X` | Standard batch with case/control |
-| `SCN` | `MyStudy0112345` | Minimal anonymised cohort (Scenario 2) |
+```
+MyStudy · 01     · SiteA · S     · 12345  · 1  · 7
+   S        C        T       G       N       V    X
+ study   center   track   group   random  type check
+                          (case)  number
+```
 
-For `SCTNVX` with `--study MyStudy --center 01`, a case participant at SiteA gets `MyStudy01SiteA`**`S`**`12345`**`1X`** — each segment comes directly from its flag. The track (`T`) is the site name from the input sheet; the group (`G`) is the case prefix (default `S`) or control prefix (default `C`), both changeable at `init` with `--case-prefix` and `--control-prefix`.
+Each letter maps to one segment:
 
-`N` is the only required block — it is the unique random number that makes each ID distinct. All other blocks are optional prefixes around it.
+| Letter | What it adds | Notes |
+|--------|-------------|-------|
+| `S` | Study name (`--study`) | Useful when IDs from different studies may appear in the same dataset |
+| `C` | Center code (`--center`) | Include for multi-center studies |
+| `T` | Site / sample name | Comes from the input sheet or `--track`; first character used in multi-track mode |
+| `G` | Case or control prefix | Default `S` for cases, `C` for controls — change with `--case-prefix` / `--control-prefix` |
+| `N` | Unique random number | **Required.** The core of the ID |
+| `V` | ID-type flag | **All three ID types use the same `--blocks` pattern; `V` is the only field whose value differs:** `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter — omit if you don't need to distinguish IDP from IDS at a glance |
+| `X` | Check digit | A single digit computed from the rest of the ID. If anyone misreads or mistypes one character on a tube label or spreadsheet, the check digit catches it. Include for physical labels; safe to omit for digital-only workflows |
 
-**`--digits`** sets how many digits `N` uses (default `5`), which determines your maximum total enrolment across all waves:
+Common starting points:
+
+| `--blocks` | Example ID | When to use |
+|------------|-----------|------------|
+| `SCTNVX` | `MyStudy01SiteAS123451X` | Full labels with study prefix and checksum |
+| `CTGNVX` | `01SiteAS123451X` | Standard multi-site case/control batch |
+| `CTNVX` | `01SiteA123451X` | No case/control distinction |
+| `SCN` | `MyStudy0112345` | Minimal — anonymised cohort (Scenario 2) |
+
+### Choosing `--digits`
+
+`--digits` controls how many digits `N` uses (default `5`), which sets your maximum total enrolment across all recruitment waves:
 
 | `--digits` | Max participants |
 |-----------|----------------|
@@ -68,7 +79,7 @@ For `SCTNVX` with `--study MyStudy --center 01`, a case participant at SiteA get
 | `6` | ~300,000 |
 | `7` | ~3,000,000 |
 
-Set this once at `init` and do not change it — all IDs in a study must use the same digit count. Follow-up visits do not count toward the limit. See [REFERENCE.md](REFERENCE.md) for full details.
+Set this once at `init` — it cannot be changed after IDs have been generated. If you need more capacity, start a fresh study in a new output folder with a higher digit count. Follow-up visits do not count toward the limit. See [REFERENCE.md](REFERENCE.md) for full details.
 
 ---
 
@@ -82,7 +93,7 @@ Run `init` first (see above), then:
 # All participants in one group
 python3 idgenerator.py batch --samplesize 5000 --output ./ids
 
-# Cases and controls (--blocks CTGNVX set at init)
+# Cases and controls — G in --blocks (set at init) is what adds the case/control prefix to each ID
 python3 idgenerator.py batch --samplesize 50 80 --output ./ids
 ```
 
