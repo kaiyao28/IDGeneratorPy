@@ -27,11 +27,11 @@ Usage examples
     Sample002    50       75
 
   Output files produced per sample (in per_site/ subfolder):
-    {date}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_First.txt    (first creation)
-    {date}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_First.txt
-    {date}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_First.txt
-    {date}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_First.txt
-    (re-runs that extend existing files produce _Updated.txt instead)
+    {date}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_First.csv    (first creation)
+    {date}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_First.csv
+    {date}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_First.csv
+    {date}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_First.csv
+    (re-runs that extend existing files produce _Updated.csv instead)
 
 # Generate follow-up visit 2 from baseline files:
   python idgenerator.py followup \\
@@ -85,12 +85,12 @@ ID types (Olden et al. 2016, BMC Med Res Methodol):
   IDT = Temporary identifier      — temporary linkage key between IDP and IDS; can be deleted for anonymisation
   IDE = External identifier       — k+1 digits; links an external project to existing IDS records
 
-Output files (tab-separated .txt):
-  {date}_{study}_IDP_IDT_T={track}_N={n}_First.txt   — IDP/IDT pairs, first creation
-  {date}_{study}_IDP_IDT_T={track}_N={n}_Updated.txt   — IDP/IDT pairs, after extending existing
-  {date}_{study}_IDS_IDT_T={track}_N={n}_First.txt   — IDS/IDT pairs (always written; --shuffle controls row order)
-  {date}_{study}_IDP_IDT_ALL_N={n}.txt                  — master IDP combined across all sites
-  {date}_{study}_IDS_IDT_ALL_N={n}.txt                  — master IDS combined across all sites
+Output files (comma-separated .csv):
+  {date}_{study}_IDP_IDT_T={track}_N={n}_First.csv   — IDP/IDT pairs, first creation
+  {date}_{study}_IDP_IDT_T={track}_N={n}_Updated.csv   — IDP/IDT pairs, after extending existing
+  {date}_{study}_IDS_IDT_T={track}_N={n}_First.csv   — IDS/IDT pairs (always written; --shuffle controls row order)
+  {date}_{study}_IDP_IDT_ALL_N={n}.csv                  — master IDP combined across all sites (with No. counter)
+  {date}_{study}_IDS_IDT_ALL_N={n}.csv                  — master IDS combined across all sites (with No. counter)
 """
 
 import argparse
@@ -403,9 +403,20 @@ def _id_pools(digits: int):
 
 def _write_tsv(path, header, rows):
     with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write("\t".join(str(x) for x in header) + "\n")
+        w = csv.writer(f)
+        w.writerow(header)
         for row in rows:
-            f.write("\t".join(str(x) for x in row) + "\n")
+            w.writerow(row)
+
+
+def _write_numbered(path, header, rows):
+    """Write CSV with a leading No. column (1-indexed). For master ALL files only."""
+    rows_list = list(rows)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["No."] + list(header))
+        for i, row in enumerate(rows_list, 1):
+            w.writerow([i] + list(row))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -590,12 +601,12 @@ def _write_baseline_for_track(study, center, track_name, group, track_n,
 
     g_tag = f"_G={group}" if group else ""
 
-    idp_file = out / f"{ts}_{study}_IDP_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.txt"
+    idp_file = out / f"{ts}_{study}_IDP_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.csv"
     _write_tsv(idp_file, ["IDP", "IDP128", "IDT"], zip(idp_ids, idp128, idt_ids))
     idp_rows = list(zip(idp_ids, idp128, idt_ids,
                         [track_name] * track_n, [group] * track_n))
 
-    ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.txt"
+    ids_file = out / f"{ts}_{study}_IDS_IDT_T={track_name}{g_tag}_N={track_n}_{suffix}.csv"
     _write_tsv(ids_file, ["IDS", "IDS128", "IDT"],
                ((ids_ids[i], ids128[i], idt_ids[i]) for i in order))
     ids_rows = [(ids_ids[i], ids128[i], idt_ids[i], track_name, group) for i in order]
@@ -652,14 +663,14 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
         pos += track_n
 
     # ALL files: no barcode columns — clean IDs only, safe for Excel/R merging
-    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_n}.txt"
-    _write_tsv(combined_idp, ["IDP", "IDT", "Track", "Group"],
-               [(r[0], r[2], r[3], r[4]) for r in all_idp_rows])
+    combined_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={total_n}.csv"
+    _write_numbered(combined_idp, ["IDP", "IDT", "Track", "Group"],
+                    [(r[0], r[2], r[3], r[4]) for r in all_idp_rows])
     _log(f"  Combined IDP : {combined_idp.name}")
     if all_ids_rows:
-        combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_n}.txt"
-        _write_tsv(combined_ids, ["IDS", "IDT", "Track", "Group"],
-                   [(r[0], r[2], r[3], r[4]) for r in all_ids_rows])
+        combined_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={total_n}.csv"
+        _write_numbered(combined_ids, ["IDS", "IDT", "Track", "Group"],
+                        [(r[0], r[2], r[3], r[4]) for r in all_ids_rows])
         _log(f"  Combined IDS : {combined_ids.name}")
 
     _log("Done.")
@@ -711,7 +722,7 @@ def generate_multitrack_baseline(study, center, track_names, sample_count,
 
     ts = timestamp()
     track_tag = "+".join(track_names)
-    out_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={sample_count}_First.txt"
+    out_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={sample_count}_First.csv"
     header = ["IDT"] + [f"IDP_{t}" for t in track_names]
     rows   = [[idt_ids[i]] + [idp_by_track[t][i] for t in track_names]
               for i in range(sample_count)]
@@ -735,7 +746,7 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
 
     candidates = sorted(
         f for sfx in ("First", "Updated")
-        for f in inp.glob(f"*{study}_IDP_T=*_{sfx}.txt")
+        for f in inp.glob(f"*{study}_IDP_T=*_{sfx}.csv")
         if "+" in f.stem
     )
     if not candidates:
@@ -743,8 +754,8 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
         return False
     existing_file = candidates[-1]
 
-    with open(existing_file, encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
+    with open(existing_file, encoding="utf-8", newline="") as f:
+        reader = csv.reader(f)
         header = next(reader)
         existing_rows = [r for r in reader if r]
 
@@ -787,7 +798,7 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
 
     ts = timestamp()
     track_tag = "+".join(track_names)
-    new_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={total_n}_Updated.txt"
+    new_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={total_n}_Updated.csv"
     _write_tsv(new_file, header, all_rows)
     existing_file.rename(existing_file.with_suffix(".old"))
     _log(f"  Written : {new_file.name}")
@@ -818,8 +829,8 @@ def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
     # IDS file: build idt_num → ids_num lookup (only if the file exists)
     idt_to_ids = {}
     if ids_file is not None:
-        with open(ids_file, encoding="utf-8") as f:
-            reader = csv.reader(f, delimiter="\t")
+        with open(ids_file, encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
             next(reader)
             for row in reader:
                 if not row:
@@ -830,8 +841,8 @@ def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
 
     # IDP file: ordered list of (idp_num, idt_num)
     idp_nums, idt_nums = [], []
-    with open(idp_file, encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
+    with open(idp_file, encoding="utf-8", newline="") as f:
+        reader = csv.reader(f)
         next(reader)
         for row in reader:
             if not row:
@@ -866,8 +877,8 @@ def _find_baseline_pair(study: str, sample_name: str, group: str,
     for d in candidate_dirs:
         if d.exists():
             for sfx in ("First", "Updated"):
-                idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
-                ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
+                idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_{sfx}.csv"))
+                ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_{sfx}.csv"))
     idp_matches.sort()
     ids_matches.sort()
     if not idp_matches:
@@ -884,40 +895,42 @@ def _rebuild_master_all(study: str, out: Path, ts: str):
     """
     per_site = out / "per_site"
 
-    idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*.txt"))
-    ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*.txt"))
+    idp_files = sorted(f for f in per_site.glob(f"*{study}_IDP_IDT_T=*.csv"))
+    ids_files = sorted(f for f in per_site.glob(f"*{study}_IDS_IDT_T=*.csv"))
 
     # ALL files: IDP/IDS and IDT only — no barcode columns, safe for Excel/R merging
     all_idp_rows, all_ids_rows = [], []
     for f in idp_files:
         track = get_param_from_filename(str(f), "T")
         group = get_param_from_filename(str(f), "G")
-        with open(f, encoding="utf-8") as fh:
-            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
-        for line in lines[1:]:
-            cols = line.split("\t")
-            all_idp_rows.append([cols[0], cols[2], track, group])  # IDP, IDT
+        with open(f, encoding="utf-8", newline="") as fh:
+            rdr = csv.reader(fh)
+            next(rdr)
+            for cols in rdr:
+                if cols:
+                    all_idp_rows.append([cols[0], cols[2], track, group])  # IDP, IDT
 
     for f in ids_files:
         track = get_param_from_filename(str(f), "T")
         group = get_param_from_filename(str(f), "G")
-        with open(f, encoding="utf-8") as fh:
-            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
-        for line in lines[1:]:
-            cols = line.split("\t")
-            all_ids_rows.append([cols[0], cols[2], track, group])  # IDS, IDT
+        with open(f, encoding="utf-8", newline="") as fh:
+            rdr = csv.reader(fh)
+            next(rdr)
+            for cols in rdr:
+                if cols:
+                    all_ids_rows.append([cols[0], cols[2], track, group])  # IDS, IDT
 
     # Retire old master ALL files
-    for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*.txt")):
+    for old in sorted(out.glob(f"*_{study}_IDP_IDT_ALL_*.csv")):
         old.rename(old.with_suffix(".old"))
-    for old in sorted(out.glob(f"*_{study}_IDS_IDT_ALL_*.txt")):
+    for old in sorted(out.glob(f"*_{study}_IDS_IDT_ALL_*.csv")):
         old.rename(old.with_suffix(".old"))
 
-    master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}.txt"
-    _write_tsv(master_idp, ["IDP", "IDT", "Track", "Group"], all_idp_rows)
+    master_idp = out / f"{ts}_{study}_IDP_IDT_ALL_N={len(all_idp_rows)}.csv"
+    _write_numbered(master_idp, ["IDP", "IDT", "Track", "Group"], all_idp_rows)
 
-    master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}.txt"
-    _write_tsv(master_ids, ["IDS", "IDT", "Track", "Group"], all_ids_rows)
+    master_ids = out / f"{ts}_{study}_IDS_IDT_ALL_N={len(all_ids_rows)}.csv"
+    _write_numbered(master_ids, ["IDS", "IDT", "Track", "Group"], all_ids_rows)
 
     return master_idp, master_ids
 
@@ -931,10 +944,10 @@ def _find_multitrack_site_file(study: str, site_name: str, track_tag: str,
             for sfx in ("First", "Updated"):
                 if track_tag:
                     candidates += list(d.glob(
-                        f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
+                        f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.csv"))
                 else:
                     candidates += list(d.glob(
-                        f"*{study}_{id_type}_IDT_SITE={site_name}_*_{sfx}.txt"))
+                        f"*{study}_{id_type}_IDT_SITE={site_name}_*_{sfx}.csv"))
     candidates.sort()
     return candidates[-1] if candidates else None
 
@@ -948,13 +961,13 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
     Output layout
     -------------
     output_dir/                    ← main directory (logs + config + combined files only)
-      IDP_IDT_ALL_*.txt            ← all sites/groups merged, with Track and Group columns
-      IDS_IDT_ALL_*.txt            ← same for study data (row order shuffled across all sites)
+      IDP_IDT_ALL_*.csv            ← all sites/groups merged, with No., Track and Group columns
+      IDS_IDT_ALL_*.csv            ← same for study data (row order shuffled across all sites)
       LogFile.txt
       study.cfg
     output_dir/per_site/           ← one file per site×group (always written here)
-      IDP_IDT_T=…_G=…_*.txt
-      IDS_IDT_T=…_G=…_*.txt       ← only when --shuffle is used
+      IDP_IDT_T=…_G=…_*.csv
+      IDS_IDT_T=…_G=…_*.csv       ← only when --shuffle is used
 
     Extend mode (default — auto-detected per row)
     ----------------------------------------------
@@ -1162,12 +1175,13 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     n_col_per_part     = len(track_names) if has_tracks else 1
     track_len_in_id    = 1 if has_tracks else 0   # 1-char abbreviation, or no T block
 
+    g_col = ["Group"] if use_groups else []
     if has_tracks:
-        file_header   = ["IDT"] + [f"{id_type}_{t}" for t in track_names]
-        master_header = ["Site", "IDT"] + [f"{id_type}_{t}" for t in track_names]
+        file_header   = ["IDT"] + [f"{id_type}_{t}" for t in track_names] + g_col
+        master_header = ["Site", "IDT"] + [f"{id_type}_{t}" for t in track_names] + g_col
     else:
-        file_header   = ["IDT", id_type]
-        master_header = ["Site", "IDT", id_type]
+        file_header   = ["IDT", id_type] + g_col
+        master_header = ["Site", "IDT", id_type] + g_col
 
     # ── Planning phase: classify sites, collect existing numbers ──────────────
     plan = []
@@ -1180,8 +1194,8 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             continue
         existing_file = _find_multitrack_site_file(study, site_name, track_tag, inp, id_type)
         if existing_file:
-            with open(existing_file, encoding="utf-8") as f:
-                reader = csv.reader(f, delimiter="\t")
+            with open(existing_file, encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
                 _hdr = next(reader)
                 existing_rows = [r for r in reader if r]
             existing_n = len(existing_rows)
@@ -1270,8 +1284,14 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
                     col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
                                                 study=study, site=site_name)
                                        for n in col_slice]
-            new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
-                        for i in range(add_n)]
+            if use_groups:
+                n_c    = e.get("n_cases", add_n)
+                groups = [case_prefix] * n_c + [control_prefix] * (add_n - n_c)
+                new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names] + [groups[i]]
+                            for i in range(add_n)]
+            else:
+                new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
+                            for i in range(add_n)]
         else:
             col_slice = new_col_pool[col_pos:col_pos + add_n]
             col_pos  += add_n
@@ -1284,11 +1304,13 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
                                      study=study, site=site_name, group=control_prefix)
                             for n in col_slice[n_c:]]
                 col_ids  = case_ids + ctrl_ids
+                groups   = [case_prefix] * n_c + [control_prefix] * (add_n - n_c)
+                new_rows = [[idt_ids[i], col_ids[i], groups[i]] for i in range(add_n)]
             else:
                 col_ids  = [build_id(blocks, center, "", n, id_visit, checksum_fn,
                                      study=study, site=site_name)
                             for n in col_slice]
-            new_rows = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
+                new_rows = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
 
         if mode == "extend":
             all_file_rows = e["existing_rows"] + new_rows
@@ -1304,38 +1326,39 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
 
         if has_tracks:
             per_site_file = per_site_out / (
-                f"{ts}_{study}_{id_type}_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.txt"
+                f"{ts}_{study}_{id_type}_T={track_tag}_SITE={site_name}_N={total_n}_{suffix}.csv"
             )
         else:
             per_site_file = per_site_out / (
-                f"{ts}_{study}_{id_type}_IDT_SITE={site_name}_N={total_n}_{suffix}.txt"
+                f"{ts}_{study}_{id_type}_IDT_SITE={site_name}_N={total_n}_{suffix}.csv"
             )
         _write_tsv(per_site_file, file_header, all_file_rows)
         _log(f"  [{site_name}] {action}  →  per_site/{per_site_file.name}")
 
     # ── Rebuild master ALL by re-reading every current per-site file ──────────
     all_master_rows = []
-    glob_pat = (f"*{study}_{id_type}_T={track_tag}_SITE=*.txt" if has_tracks
-                else f"*{study}_{id_type}_IDT_SITE=*.txt")
+    glob_pat = (f"*{study}_{id_type}_T={track_tag}_SITE=*.csv" if has_tracks
+                else f"*{study}_{id_type}_IDT_SITE=*.csv")
     for f in sorted(per_site_out.glob(glob_pat)):
         site = get_param_from_filename(str(f), "SITE")
-        with open(f, encoding="utf-8") as fh:
-            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
-        for line in lines[1:]:
-            cols = line.split("\t")
-            all_master_rows.append([site] + cols)
+        with open(f, encoding="utf-8", newline="") as fh:
+            reader = csv.reader(fh)
+            next(reader)
+            for cols in reader:
+                if cols:
+                    all_master_rows.append([site] + cols)
 
-    old_glob     = (f"*_{study}_{id_type}_T={track_tag}_ALL_*.txt" if has_tracks
-                    else f"*_{study}_{id_type}_IDT_ALL_*.txt")
-    master_fname = (f"{ts}_{study}_{id_type}_T={track_tag}_ALL_N={len(all_master_rows)}.txt"
+    old_glob     = (f"*_{study}_{id_type}_T={track_tag}_ALL_*.csv" if has_tracks
+                    else f"*_{study}_{id_type}_IDT_ALL_*.csv")
+    master_fname = (f"{ts}_{study}_{id_type}_T={track_tag}_ALL_N={len(all_master_rows)}.csv"
                     if has_tracks
-                    else f"{ts}_{study}_{id_type}_IDT_ALL_N={len(all_master_rows)}.txt")
+                    else f"{ts}_{study}_{id_type}_IDT_ALL_N={len(all_master_rows)}.csv")
 
     for old in sorted(out.glob(old_glob)):
         old.rename(old.with_suffix(".old"))
 
     master_file = out / master_fname
-    _write_tsv(master_file, master_header, all_master_rows)
+    _write_numbered(master_file, master_header, all_master_rows)
     _log(f"  Master ALL : {master_file.name}")
     _log("Done.")
     return True
@@ -1369,7 +1392,7 @@ def generate_followups(study, visit, input_dir, output_dir):
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
         for sfx in ("First", "Updated")
-        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
+        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.csv")
         if "_ALL_" not in f.name
     )
     if not baseline_files:
@@ -1387,8 +1410,8 @@ def generate_followups(study, visit, input_dir, output_dir):
         track_name = get_param_from_filename(str(bf), "T")
         group      = get_param_from_filename(str(bf), "G")
 
-        with open(bf, encoding="utf-8") as f:
-            reader = csv.reader(f, delimiter="\t")
+        with open(bf, encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
             header = next(reader)
             if header != ["IDS", "IDS128", "IDT"]:
                 _log(f"ERROR: Unexpected header in {bf.name}: {header}")
@@ -1404,7 +1427,7 @@ def generate_followups(study, visit, input_dir, output_dir):
         g_tag   = f"_G={group}" if group else ""
 
         # Per-site file: keeps barcode columns for label printing
-        per_site_file = followup_out / f"{ts}_{study}_IDS_IDSV{visit}_T={track_name}{g_tag}_N={track_n}_V={visit}.txt"
+        per_site_file = followup_out / f"{ts}_{study}_IDS_IDSV{visit}_T={track_name}{g_tag}_N={track_n}_V={visit}.csv"
         _write_tsv(per_site_file,
                    ["IDS", f"IDSV{visit}", "IDS128", f"IDSV{visit}128"],
                    zip(ids_ids, idsv_ids, ids128, idsv128))
@@ -1415,13 +1438,13 @@ def generate_followups(study, visit, input_dir, output_dir):
         label = f"{track_name}/{group}" if group else track_name
         _log(f"  [{label}] {track_n} follow-ups (V={visit})  →  followup/{per_site_file.name}")
 
-    for old in sorted(out.glob(f"*_{study}_IDS_IDSV{visit}_ALL_*_V={visit}.txt")):
+    for old in sorted(out.glob(f"*_{study}_IDS_IDSV{visit}_ALL_*_V={visit}.csv")):
         old.rename(old.with_suffix(".old"))
     # ALL file: no barcode columns — clean IDs only, safe for Excel/R merging
-    all_file = out / f"{ts}_{study}_IDS_IDSV{visit}_ALL_N={len(all_rows)}_V={visit}.txt"
-    _write_tsv(all_file,
-               ["IDS", f"IDSV{visit}", "Track", "Group"],
-               all_rows)
+    all_file = out / f"{ts}_{study}_IDS_IDSV{visit}_ALL_N={len(all_rows)}_V={visit}.csv"
+    _write_numbered(all_file,
+                    ["IDS", f"IDSV{visit}", "Track", "Group"],
+                    all_rows)
     _log(f"  Master FOLLOWUP_ALL : {all_file.name}")
 
     _log("Done.")
@@ -1442,7 +1465,7 @@ def add_track(study, track_name, output_dir, shuffle=False):
     if shuffle:
         kinds.append(("IDS_IDT", ["IDS", "IDS128", "IDT"]))
     for kind, header in kinds:
-        f = out / f"{ts}_{study}_{kind}_T={track_name}_N=0_First.txt"
+        f = out / f"{ts}_{study}_{kind}_T={track_name}_N=0_First.csv"
         _write_tsv(f, header, [])
         _log(f"  Created {f.name}")
 
@@ -1474,11 +1497,11 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
 
         idp_files = sorted(
             f for sfx in ("First", "Updated")
-            for f in inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_{sfx}.txt")
+            for f in inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_{sfx}.csv")
         )
         ids_files = sorted(
             f for sfx in ("First", "Updated")
-            for f in inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_{sfx}.txt")
+            for f in inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_{sfx}.csv")
         )
 
         if not idp_files:
@@ -1504,8 +1527,8 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             if actual_ids != existing_n:
                 _log(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
                 return False
-            with open(ids_files[0], encoding="utf-8") as f:
-                reader = csv.reader(f, delimiter="\t")
+            with open(ids_files[0], encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
                 next(reader)
                 for row in reader:
                     if not row:
@@ -1516,8 +1539,8 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
 
         idp_nums_existing = []
         idt_nums_existing = []
-        with open(idp_files[0], encoding="utf-8") as f:
-            reader = csv.reader(f, delimiter="\t")
+        with open(idp_files[0], encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
             next(reader)
             for row in reader:
                 if not row:
@@ -1585,7 +1608,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
         for sfx in ("First", "Updated")
-        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
+        for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.csv")
         if "_ALL_" not in f.name
     )
     if not baseline_files:
@@ -1598,8 +1621,8 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
         track_name = get_param_from_filename(str(bf), "T")
         group      = get_param_from_filename(str(bf), "G")
 
-        with open(bf, encoding="utf-8") as f:
-            reader = csv.reader(f, delimiter="\t")
+        with open(bf, encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
             header = next(reader)
             if header != ["IDS", "IDS128", "IDT"]:
                 _log(f"ERROR: Unexpected header in {bf.name}: {header}")
@@ -1616,7 +1639,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
         ide128  = [format_code128(x) for x in ide_ids]
 
         g_tag    = f"_G={group}" if group else ""
-        out_file = out / f"{ts}_{study}_IDS_IDE_T={track_name}{g_tag}_N={track_n}_{ext_project}.txt"
+        out_file = out / f"{ts}_{study}_IDS_IDE_T={track_name}{g_tag}_N={track_n}_{ext_project}.csv"
         _write_tsv(out_file, ["IDS", "IDE", "IDS128", "IDE128"],
                    zip(ids_ids, ide_ids, ids128, ide128))
 

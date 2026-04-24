@@ -26,7 +26,7 @@ python3 idgenerator.py init \
     --checksum Damm_2004 \
     --tracks   Genetics \
     --anon \
-    --output   test_scenario2/ids
+    --output   Test_Scripts/test_scenario2/ids
 
 # Step 2 — generate IDS IDs from a sample sheet; extend with more samples later
 #
@@ -37,15 +37,15 @@ python3 idgenerator.py init \
 #   Output per site: IDT | IDS_Genetics
 #
 python3 idgenerator.py batch \
-    --input-file test_scenario2/wave1.txt \
-    --output     test_scenario2/ids \
+    --input-file Test_Scripts/test_scenario2/wave1.txt \
+    --output     Test_Scripts/test_scenario2/ids \
     --seed 10
 
 #   Wave 2 — additional participants at the same sites (SiteA +50, SiteB +30).
 #   The script finds the existing per-site files and appends automatically.
 python3 idgenerator.py batch \
-    --input-file test_scenario2/wave2.txt \
-    --output     test_scenario2/ids \
+    --input-file Test_Scripts/test_scenario2/wave2.txt \
+    --output     Test_Scripts/test_scenario2/ids \
     --seed 11
 
 # Step 3 — starting a NEW parallel dataset with a different track combination
@@ -65,9 +65,9 @@ python3 idgenerator.py batch \
 #       --checksum Damm_2004 \
 #       --tracks   Genetics,Phenotype,Imaging \
 #       --anon \
-#       --output   test_scenario2/ids
+#       --output   Test_Scripts/test_scenario2/ids
 #
 #   python3 idgenerator.py batch \
-#       --input-file test_scenario2/wave3.txt \
-#       --output     test_scenario2/ids \
+#       --input-file Test_Scripts/test_scenario2/wave3.txt \
+#       --output     Test_Scripts/test_scenario2/ids \
 #       --seed 12

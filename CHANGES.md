@@ -118,13 +118,18 @@ The fix splits barcode columns by use:
 |-----------|---------|
 | `IDP_IDT` per-site | `IDP`, `IDP128`, `IDT` |
 | `IDS_IDT` per-site | `IDS`, `IDS128`, `IDT` |
-| `IDP_IDT` ALL master | `IDP`, `IDT`, `Track`, `Group` |
-| `IDS_IDT` ALL master | `IDS`, `IDT`, `Track`, `Group` |
+| `IDP_IDT` ALL master | `No.`, `IDP`, `IDT`, `Track`, `Group` |
+| `IDS_IDT` ALL master | `No.`, `IDS`, `IDT`, `Track`, `Group` |
 | Follow-up per-site | `IDS`, `IDSVn`, `IDS128`, `IDSVn128` |
-| Follow-up ALL | `IDS`, `IDSVn`, `Track`, `Group` |
+| Follow-up ALL | `No.`, `IDS`, `IDSVn`, `Track`, `Group` |
+| Multi-track per-site | `IDT`, `IDS_*` columns, `Group` (if G in blocks) |
+| Multi-track ALL master | `No.`, `Site`, `IDT`, `IDS_*` columns, `Group` (if G in blocks) |
 
-### Filename conventions
+### File format and filename conventions
 
+- All data files are **comma-separated CSV** (`.csv`). They open directly in Excel by double-clicking.
+- LogFile.txt remains plain text.
+- Master `_ALL_` files include a leading `No.` column (1-indexed row counter) for quick scanning.
 - Timestamps use date only (`YYYYMMDD`) — no time component.
 - Per-site files carry a `_First` or `_Updated` suffix — `_First` for a site's initial creation (any wave), `_Updated` when new recruits were added to an existing site.
 - Master `_ALL_` files carry neither suffix (they are always rebuilt to the current state after every run).
@@ -142,7 +147,7 @@ All commands (except `init`) automatically load parameters from `study.cfg` if i
 
 **Multi-track `batch` ignored NControls.** The `_generate_batch_multitrack` function read only `NCases` from each sheet row and discarded `NControls`. Sites with a case/control split (e.g. SiteB with 150 cases + 75 controls) produced only 150 IDS IDs instead of 225. Fixed: `n_participants = n_cases + n_controls`.
 
-**Multi-track `batch` produced malformed IDs when `--blocks` contained `G`.** The G building block requires a case/control group argument. In multi-track mode every participant is treated as a single unit with no group split, so `group` was always passed as an empty string. This silently shrank the ID (missing G character) and shifted all subsequent field positions (N, V, X), breaking the extend logic. Fixed: `G` is stripped from `--blocks` at the start of `_generate_batch_multitrack`. Use `--blocks CTNVX` for multi-track anonymised batch runs.
+**Multi-track `batch` ignored the `G` block and omitted the Group column.** In multi-track and `--anon` mode, `G` was stripped from blocks and the output files had no Group column, even when `NCases` and `NControls` were both non-zero. Fixed: `G` is now respected in all modes. When `G` is in blocks, cases and controls receive their respective prefixes in every ID, and a `Group` column is written to both per-site files and master ALL files. The group split (`n_cases` / `n_controls`) is tracked in the planning phase so it survives auto-extend runs.
 
 **`--anon` without `--tracks` fell to the standard `generate_batch` path.** When `--anon` was saved in `study.cfg` but no `--tracks` were declared, the batch dispatch routed to the standard case/control path which always generates IDP (personal data IDs). Fixed: a dedicated branch now routes `--anon` with no tracks to `_generate_batch_multitrack` with an empty track list, producing a single plain `IDS` column.
 
