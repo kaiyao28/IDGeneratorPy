@@ -39,7 +39,7 @@ python3 idgenerator.py batch \
 #   --site SiteA matches the existing file — auto-extends.
 python3 idgenerator.py batch \
     --samplesize 10 20 \
-    --site    SiteA \
+    --site    SiteB \
     --output  Test_Scripts/test_scenario1/ids \
     --seed 2
 
