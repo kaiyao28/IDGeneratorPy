@@ -36,7 +36,7 @@ IDs are assembled from a sequence of named building blocks:
 | `C` | Recruiting site code (`--center`) | Multi-center studies |
 | `R` | Recruitment site name — `SampleName` from the input sheet | Use in multi-track mode to embed the site name alongside `T` |
 | `T` | Data-track abbreviation — first character of each `--tracks` name (e.g. `G` for Genetics, `P` for Phenotype). **Requires `--tracks` declared at `init`** — without it T has no meaning and will repeat the site name (same as R). Use `R` + `T` together in multi-track mode. `init` warns if T is in `--blocks` but `--tracks` is not set | Only when `--tracks` is declared at `init`; must be included when using `add-track` |
-| `G` | Group prefix — case (`S`) or control (`C`) | Standard `batch` mode with case/control distinction. **Not used in multi-track `batch --tracks` mode** — G is stripped automatically; all participants at a site receive one ID regardless of case/control status. |
+| `G` | Group prefix — case (`S`) or control (`C`) | Works in all modes. Cases get `case_prefix` (default `S`) and controls get `control_prefix` (default `C`) embedded in every ID, including across all tracks in multi-track mode. Omit if no case/control distinction is needed |
 | `N` | Unique random number | Always |
 | `V` | ID-type flag — `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter; follow-ups use a `V2_` prefix on the full baseline IDS instead | Include to distinguish IDP from IDS at a glance |
 | `X` | Check digit (one character) | Recommended for all IDs |
@@ -78,7 +78,7 @@ MyStudy · 01     · SiteA · S     · 12345  · 1    · 7
                           (case)  number
 ```
 
-**Multi-track batch** — `--blocks SCRTNVX`, same study/center/site, track `Genetics` (no G — stripped automatically):
+**Multi-track batch** — `--blocks SCRTNVX`, same study/center/site, track `Genetics`, no case/control distinction:
 
 ```
 MyStudy · 01     · SiteA · G     · 12345  · 1    · 7

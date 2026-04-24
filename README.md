@@ -69,7 +69,7 @@ Each letter maps to one segment:
 | `C` | Center code (`--center`) | Any string — numbers (`01`) or letters (`LON`) both work. Include for multi-center studies |
 | `R` | Recruitment site name | `SampleName` from the input sheet |
 | `T` | Data-track abbreviation | First character of each `--tracks` name (`G`=Genetics, `P`=Phenotype). **Requires `--tracks` declared at `init`** — omit if no tracks; all participants then receive a single uniform IDS |
-| `G` | Case/control prefix | Default `S` cases, `C` controls — change with `--case-prefix` / `--control-prefix`. Stripped automatically in multi-track mode |
+| `G` | Case/control prefix | Default `S` cases, `C` controls — change with `--case-prefix` / `--control-prefix`. Works in all modes including multi-track. Omit if no case/control distinction needed |
 | `N` | Unique random number | **Required** |
 | `V` | ID-type flag | `0` = IDP (personal), `1` = IDS or IDT. Not a visit counter. Omit if you don't need to tell IDP from IDS at a glance |
 | `X` | Check digit | Computed from the rest of the ID — catches transcription errors on tube labels. Safe to omit for digital-only workflows |

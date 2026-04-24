@@ -1126,7 +1126,8 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
 
 
 def _generate_batch_multitrack(study, center, samples, track_names, digits, blocks,
-                               checksum_name, output_dir, input_dir=None, anon=False):
+                               checksum_name, output_dir, input_dir=None, anon=False,
+                               case_prefix="S", control_prefix="C"):
     """
     Batch-generate multi-track IDs from a sample sheet.
 
@@ -1135,16 +1136,12 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     anon       : True  → draw from IDS pool, label columns IDS_* (anonymised cohort)
                  False → draw from IDP pool, label columns IDP_*
 
-    Every participant receives one IDT and one ID per track (or one plain IDS if no tracks).
-    Per-site output  (per_site/): IDT | {id_type}[_T1 | _T2 | ...]
-    Master ALL (output_dir/)    : Site | IDT | {id_type}[_T1 | ...]
-
-    G block is stripped from --blocks: multi-track mode assigns one ID per participant
-    regardless of case/control status (the distinction is preserved in the source data).
+    G block behaviour:
+      - If G is in --blocks, cases and controls get their respective prefix in every ID,
+        whether in single-IDS or multi-track mode.
+      - If G is absent, all participants are built with group="" (no prefix).
     """
-    # G block requires a group argument; multi-track assigns one ID per participant
-    # with no case/control split. Strip it so field positions stay consistent.
-    blocks = blocks.replace("G", "")
+    has_tracks = bool(track_names)
 
     checksum_fn = CHECKSUMS[checksum_name]
     out = Path(output_dir)
@@ -1159,7 +1156,7 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     hi_col   = hi_ids if anon else hi_idp
     id_visit = 1 if anon else 0
 
-    has_tracks         = bool(track_names)
+    use_groups         = "G" in blocks
     track_tag          = "+".join(track_names) if has_tracks else ""
     n_col_per_part     = len(track_names) if has_tracks else 1
     track_len_in_id    = 1 if has_tracks else 0   # 1-char abbreviation, or no T block
@@ -1192,8 +1189,9 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
             for row in existing_rows:
                 if pos_idt >= 0 and row[0]:
                     used_idt.add(int(row[0][pos_idt:pos_idt + digits]))
+            g_len   = len(case_prefix) if use_groups else 0
             pos_col = field_start(blocks, "N", len(center), track_len_in_id, digits,
-                                  study_len=s_len, site_len=len(site_name))
+                                  group_len=g_len, study_len=s_len, site_len=len(site_name))
             if has_tracks:
                 for i in range(len(track_names)):
                     for row in existing_rows:
@@ -1203,11 +1201,13 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
                 for row in existing_rows:
                     if pos_col >= 0 and len(row) > 1 and row[1]:
                         used_col.add(int(row[1][pos_col:pos_col + digits]))
-            plan.append(dict(site_name=site_name, add_n=n_participants, mode="extend",
-                             existing_n=existing_n, existing_rows=existing_rows,
-                             existing_file=existing_file))
+            plan.append(dict(site_name=site_name, add_n=n_participants,
+                             n_cases=n_cases, n_controls=n_controls,
+                             mode="extend", existing_n=existing_n,
+                             existing_rows=existing_rows, existing_file=existing_file))
         else:
-            plan.append(dict(site_name=site_name, add_n=n_participants, mode="new"))
+            plan.append(dict(site_name=site_name, add_n=n_participants,
+                             n_cases=n_cases, n_controls=n_controls, mode="new"))
 
     if not plan:
         _log("ERROR: No valid sites found in input.")
@@ -1254,20 +1254,40 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         if has_tracks:
             col_by_track: dict = {}
             for t in track_names:
-                col_slice       = new_col_pool[col_pos:col_pos + add_n]
-                col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
-                                            study=study, site=site_name)
-                                   for n in col_slice]
-                col_pos        += add_n
+                col_slice = new_col_pool[col_pos:col_pos + add_n]
+                col_pos  += add_n
+                if use_groups:
+                    n_c           = e.get("n_cases", add_n)
+                    case_ids      = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
+                                             study=study, site=site_name, group=case_prefix)
+                                     for n in col_slice[:n_c]]
+                    ctrl_ids      = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
+                                             study=study, site=site_name, group=control_prefix)
+                                     for n in col_slice[n_c:]]
+                    col_by_track[t] = case_ids + ctrl_ids
+                else:
+                    col_by_track[t] = [build_id(blocks, center, t[0], n, id_visit, checksum_fn,
+                                                study=study, site=site_name)
+                                       for n in col_slice]
             new_rows = [[idt_ids[i]] + [col_by_track[t][i] for t in track_names]
                         for i in range(add_n)]
         else:
             col_slice = new_col_pool[col_pos:col_pos + add_n]
-            col_ids   = [build_id(blocks, center, "", n, id_visit, checksum_fn,
-                                  study=study, site=site_name)
-                         for n in col_slice]
             col_pos  += add_n
-            new_rows  = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
+            if use_groups:
+                n_c      = e.get("n_cases", add_n)
+                case_ids = [build_id(blocks, center, "", n, id_visit, checksum_fn,
+                                     study=study, site=site_name, group=case_prefix)
+                            for n in col_slice[:n_c]]
+                ctrl_ids = [build_id(blocks, center, "", n, id_visit, checksum_fn,
+                                     study=study, site=site_name, group=control_prefix)
+                            for n in col_slice[n_c:]]
+                col_ids  = case_ids + ctrl_ids
+            else:
+                col_ids  = [build_id(blocks, center, "", n, id_visit, checksum_fn,
+                                     study=study, site=site_name)
+                            for n in col_slice]
+            new_rows = [[idt_ids[i], col_ids[i]] for i in range(add_n)]
 
         if mode == "extend":
             all_file_rows = e["existing_rows"] + new_rows
@@ -1847,7 +1867,8 @@ def main():
                 args.study, args.center, mt_samples, track_names,
                 args.digits, args.blocks, args.checksum,
                 args.output, args.input_dir or args.output,
-                anon=cfg.get("anon", False))
+                anon=cfg.get("anon", False),
+                case_prefix=args.case_prefix, control_prefix=args.control_prefix)
         else:
             # ── Standard batch mode: case/control per site ────────────────────
             inline_samples = None

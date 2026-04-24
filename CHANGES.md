@@ -67,6 +67,7 @@ Key `batch` capabilities not in the original:
 - **`--tracks` flag** — multi-track mode: the sheet defines sites and counts; `--tracks` defines what IDS columns every participant receives (`IDS_Genetics`, `IDS_Phenotype`, etc.). Tracks must be declared before the first batch run — they cannot be added retroactively to existing participants.
 - **`--samplesize` flag** — inline count mode: pass participant counts directly on the command line instead of a sheet (`--samplesize 50 80` for 50 cases and 80 controls). No input file needed.
 - **Track abbreviation** — in multi-track mode the T block holds the first character of the data-track name (e.g. `G` for Genetics, `P` for Phenotype). Column headers and filenames always use the full name. Use the new `R` block alongside `T` to also embed the recruitment site name in every ID (`--blocks CRTNVX`). Sites and data tracks are independent dimensions — see REFERENCE.md.
+- **G block respected in multi-track mode** — if G is in `--blocks`, cases and controls receive their group prefix in every IDS ID across all tracks. Previously G was stripped in multi-track mode; it now works consistently in both single-IDS and multi-track modes.
 
 ### `add-track`
 Creates a header-only (`N=0`) baseline placeholder for a new track, ready to be extended in a later wave.
