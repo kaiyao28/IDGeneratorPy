@@ -1236,14 +1236,26 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     tracks_label = ", ".join(track_names) if has_tracks else "(none — single IDS column)"
     _log(f"Tracks       : {tracks_label}")
     _log(f"ID type      : {id_type}  ({'anonymised cohort — no personal data' if anon else 'personal data tracked'})")
+    _log(f"Groups       : {'cases (' + case_prefix + ') + controls (' + control_prefix + ')' if use_groups else 'none (no G in --blocks)'}")
     _log(f"Sites        : {len(plan)}")
-    _log(f"\n{'Site':<20} {'Action':<10} {'Add':>6} {'Existing':>9}")
-    _log("-" * 52)
-    for e in plan:
-        ex_str = str(e.get("existing_n", "—")).rjust(9)
-        _log(f"  {e['site_name']:<18} {e['mode']:<10} {e['add_n']:>6} {ex_str}")
-    _log("-" * 52)
-    _log(f"  New IDT to generate  : {total_new_idt}")
+    if use_groups:
+        _log(f"\n{'Site':<20} {'Action':<10} {'Cases':>7} {'Controls':>10} {'Existing':>9}")
+        _log("-" * 62)
+        for e in plan:
+            ex_str = str(e.get("existing_n", "—")).rjust(9)
+            _log(f"  {e['site_name']:<18} {e['mode']:<10} {e.get('n_cases', 0):>7} {e.get('n_controls', 0):>10} {ex_str}")
+        _log("-" * 62)
+        total_cases = sum(e.get("n_cases", 0) for e in plan)
+        total_ctrls = sum(e.get("n_controls", 0) for e in plan)
+        _log(f"  New IDT to generate  : {total_new_idt}  ({total_cases} cases + {total_ctrls} controls)")
+    else:
+        _log(f"\n{'Site':<20} {'Action':<10} {'Add':>6} {'Existing':>9}")
+        _log("-" * 52)
+        for e in plan:
+            ex_str = str(e.get("existing_n", "—")).rjust(9)
+            _log(f"  {e['site_name']:<18} {e['mode']:<10} {e['add_n']:>6} {ex_str}")
+        _log("-" * 52)
+        _log(f"  New IDT to generate  : {total_new_idt}")
     col_detail = (f"  ({len(track_names)} tracks × {total_new_idt})" if has_tracks else "")
     _log(f"  New {id_type} to generate : {total_new_col}{col_detail}")
     _log()
