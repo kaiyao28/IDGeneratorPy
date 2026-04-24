@@ -126,7 +126,7 @@ The fix splits barcode columns by use:
 ### Filename conventions
 
 - Timestamps use date only (`YYYYMMDD`) — no time component.
-- Per-site files carry a `_Baseline` or `_Extended` suffix to distinguish first creation from subsequent extensions.
+- Per-site files carry a `_First` or `_Updated` suffix — `_First` for a site's initial creation (any wave), `_Updated` when new recruits were added to an existing site.
 - Master `_ALL_` files carry neither suffix (they are always rebuilt to the current state after every run).
 - Superseded per-site files are renamed `.old` rather than deleted, preserving the full audit trail.
 

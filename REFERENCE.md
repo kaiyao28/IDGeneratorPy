@@ -169,7 +169,7 @@ python3 idgenerator.py batch \
     --output ./ids
 ```
 
-`--samplesize` takes one value when `G` is absent from `--blocks`, two values (NCases NControls) when `G` is present. The track name defaults to the study name; override with `--track MyCohort`.
+`--samplesize` takes one value when `G` is absent from `--blocks`, two values (NCases NControls) when `G` is present. The site name defaults to the study name; override with `--site MySite`.
 
 **Sheet mode** — specify counts in a file:
 
@@ -196,7 +196,7 @@ Column names are flexible (case-insensitive). Accepted aliases:
 | Flag | Effect |
 |------|--------|
 | `--samplesize <N>` or `<N M>` | Inline counts — alternative to `--input-file`. |
-| `--track <name>` | Track/cohort name when using `--samplesize` (default: study name). |
+| `--site <name>` | Recruitment site name embedded by the R block when using `--samplesize` (default: study name). |
 | `--tracks <T1,T2,...>` | Multi-track mode: comma-separated data track names. The sheet defines sites and counts; `--tracks` defines what IDS columns each participant receives. Auto-loaded from `study.cfg` if set at `init`. |
 | `--fresh` | Treat every row as new — do not extend any existing baseline. |
 | `--shuffle` | Randomise row order in per-site IDS files. Breaks positional re-identification if the file is extracted from its context. Unshuffled by default. |
@@ -220,9 +220,9 @@ ids/
   LogFile.txt
   study.cfg
   per_site/
-    YYYYMMDD_{study}_IDP_IDT_T={s}_G=S_N={n}_Baseline.txt   ← first creation
-    YYYYMMDD_{study}_IDP_IDT_T={s}_G=S_N={n}_Extended.txt   ← after extending
-    YYYYMMDD_{study}_IDS_IDT_T={s}_G=S_N={n}_Baseline.txt
+    YYYYMMDD_{study}_IDP_IDT_T={s}_G=S_N={n}_First.txt   ← first creation
+    YYYYMMDD_{study}_IDP_IDT_T={s}_G=S_N={n}_Updated.txt   ← after extending
+    YYYYMMDD_{study}_IDS_IDT_T={s}_G=S_N={n}_First.txt
     *.old                                                     ← superseded files
 ```
 
@@ -245,7 +245,7 @@ python3 idgenerator.py baseline \
     --output     ./ids
 ```
 
-Output file: `YYYYMMDD_{study}_IDP_T=Genetics+Phenotype+Imaging_N=500_Baseline.txt`  
+Output file: `YYYYMMDD_{study}_IDP_T=Genetics+Phenotype+Imaging_N=500_First.txt`  
 Columns: `IDT | IDP_Genetics | IDP_Phenotype | IDP_Imaging`
 
 **Single-track mode** (`--tracks "Name:count,..."`, no `--samplesize`)
@@ -264,7 +264,7 @@ Optional: `--shuffle`, `--seed`
 
 ### `followup` — generate follow-up visit IDs
 
-Reads all current IDS_IDT files from `per_site/` (both `_Baseline` and `_Extended`) and produces IDS↔IDSVn pairs. Visit number is read from `study.cfg`; override with `--visit`.
+Reads all current IDS_IDT files from `per_site/` (both `_First` and `_Updated`) and produces IDS↔IDSVn pairs. Visit number is read from `study.cfg`; override with `--visit`.
 
 ```bash
 python3 idgenerator.py followup --output ./ids
@@ -364,8 +364,8 @@ All output files are **tab-separated `.txt`** with a single header row. `*128` c
 
 **Filename conventions:**
 
-- `_Baseline` — first time a site/group was generated
-- `_Extended` — file was extended with additional subjects
+- `_First` — first time this site/group was generated (any wave)
+- `_Updated` — site/group already existed; new recruits were added
 - `_ALL_` in name — master file combining all sites (no status suffix)
 - `.old` extension — superseded by a newer version
 
@@ -463,22 +463,22 @@ test_full/ids/
   20XXXXXX_TestStudy_IDP_IDT_ALL_N=135.txt
   20XXXXXX_TestStudy_IDS_IDT_ALL_N=135.txt
   per_site/
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=S_N=20_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=C_N=40_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=S_N=15_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=C_N=30_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=S_N=10_Baseline.txt
-    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=C_N=20_Baseline.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=S_N=20_First.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteA_G=C_N=40_First.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=S_N=15_First.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteB_G=C_N=30_First.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=S_N=10_First.txt
+    20XXXXXX_TestStudy_IDP_IDT_T=SiteC_G=C_N=20_First.txt
     (+ matching IDS_IDT files)
 ```
 
 **After Step 3 (Wave 2):**
-- SiteA `_Baseline.txt` renamed to `.old`; new `_Extended.txt` written (25S / 50C)
-- SiteD files created fresh as `_Baseline.txt`
+- SiteA `_First.txt` renamed to `.old`; new `_Updated.txt` written (25S / 50C)
+- SiteD files created fresh as `_First.txt`
 - Master ALL rebuilt: all five sites (A–D), N=174 total
 
 **After Step 4 (Wave 3):**
-- SiteE files created as `_Baseline.txt`
+- SiteE files created as `_First.txt`
 - `--shuffle` randomises row order in per-site IDS files for SiteE
 - Master ALL rebuilt: all six sites (A–E), N=192 total
 
@@ -499,7 +499,7 @@ All six sites appear in the follow-up master, including SiteE whose IDS file was
 - **`--seed`** makes runs reproducible. The seed is recorded in `LogFile.txt`.
 - **Wave auto-detection**: the script reads the per-site files in `per_site/` to determine what already exists. Do not delete or rename those files between waves.
 - **Unique IDs across all waves**: existing numbers are read back from old files before new numbers are drawn, so there is no risk of collision.
-- **`_Baseline` vs `_Extended`**: a site that has been extended will always have `_Extended.txt` as its current per-site file. The `_Baseline.txt` for that site is retained as `.old` for audit purposes.
+- **`_First` vs `_Updated`**: a site that has been extended will always have `_Updated.txt` as its current per-site file. The `_First.txt` for that site is retained as `.old` for audit purposes.
 - **Master files**: after every `batch` run the master `_ALL_` files are rebuilt from scratch from all current per-site files, so they represent the complete state of the study at that moment.
 
 ---

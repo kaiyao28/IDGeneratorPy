@@ -27,11 +27,11 @@ Usage examples
     Sample002    50       75
 
   Output files produced per sample (in per_site/ subfolder):
-    {date}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_Baseline.txt    (first creation)
-    {date}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_Baseline.txt
-    {date}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_Baseline.txt
-    {date}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_Baseline.txt
-    (re-runs that extend existing files produce _Extended.txt instead)
+    {date}_{study}_IDP_IDT_T={sample}_G=S_N={cases}_First.txt    (first creation)
+    {date}_{study}_IDS_IDT_T={sample}_G=S_N={cases}_First.txt
+    {date}_{study}_IDP_IDT_T={sample}_G=C_N={controls}_First.txt
+    {date}_{study}_IDS_IDT_T={sample}_G=C_N={controls}_First.txt
+    (re-runs that extend existing files produce _Updated.txt instead)
 
 # Generate follow-up visit 2 from baseline files:
   python idgenerator.py followup \\
@@ -86,9 +86,9 @@ ID types (Olden et al. 2016, BMC Med Res Methodol):
   IDE = External identifier       — k+1 digits; links an external project to existing IDS records
 
 Output files (tab-separated .txt):
-  {date}_{study}_IDP_IDT_T={track}_N={n}_Baseline.txt   — IDP/IDT pairs, first creation
-  {date}_{study}_IDP_IDT_T={track}_N={n}_Extended.txt   — IDP/IDT pairs, after extending existing
-  {date}_{study}_IDS_IDT_T={track}_N={n}_Baseline.txt   — IDS/IDT pairs (always written; --shuffle controls row order)
+  {date}_{study}_IDP_IDT_T={track}_N={n}_First.txt   — IDP/IDT pairs, first creation
+  {date}_{study}_IDP_IDT_T={track}_N={n}_Updated.txt   — IDP/IDT pairs, after extending existing
+  {date}_{study}_IDS_IDT_T={track}_N={n}_First.txt   — IDS/IDT pairs (always written; --shuffle controls row order)
   {date}_{study}_IDP_IDT_ALL_N={n}.txt                  — master IDP combined across all sites
   {date}_{study}_IDS_IDT_ALL_N={n}.txt                  — master IDS combined across all sites
 """
@@ -577,11 +577,11 @@ def _build_ids_for_track(blocks, center, track_name, group, idp_nums, ids_nums, 
 def _write_baseline_for_track(study, center, track_name, group, track_n,
                                idp_nums, ids_nums, idt_nums,
                                blocks, checksum_fn, out, ts, *,
-                               shuffle=False, suffix="Baseline"):
+                               shuffle=False, suffix="First"):
     """
     Build and write per-track output files.
     Returns (idp_filepath, ids_filepath, idp_rows, ids_rows).
-    suffix="Baseline" for initial creation, "Extended" when adding to existing.
+    suffix="First" for initial creation, "Updated" when adding to existing.
     IDS rows are always returned; --shuffle controls row order only.
     """
     idp_ids, ids_ids, idt_ids, idp128, ids128, order = _build_ids_for_track(
@@ -643,7 +643,7 @@ def generate_baseline(study, center, tracks, digits, blocks, checksum_name, outp
             ids_nums[pos:pos + track_n],
             idt_nums[pos:pos + track_n],
             blocks, checksum_fn, out, ts,
-            shuffle=shuffle, suffix="Baseline",
+            shuffle=shuffle, suffix="First",
         )
         all_idp_rows.extend(idp_rows)
         all_ids_rows.extend(ids_rows)
@@ -711,7 +711,7 @@ def generate_multitrack_baseline(study, center, track_names, sample_count,
 
     ts = timestamp()
     track_tag = "+".join(track_names)
-    out_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={sample_count}_Baseline.txt"
+    out_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={sample_count}_First.txt"
     header = ["IDT"] + [f"IDP_{t}" for t in track_names]
     rows   = [[idt_ids[i]] + [idp_by_track[t][i] for t in track_names]
               for i in range(sample_count)]
@@ -734,7 +734,7 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
     out.mkdir(parents=True, exist_ok=True)
 
     candidates = sorted(
-        f for sfx in ("Baseline", "Extended")
+        f for sfx in ("First", "Updated")
         for f in inp.glob(f"*{study}_IDP_T=*_{sfx}.txt")
         if "+" in f.stem
     )
@@ -787,7 +787,7 @@ def extend_multitrack_baseline(study, center, add_n, digits, blocks, checksum_na
 
     ts = timestamp()
     track_tag = "+".join(track_names)
-    new_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={total_n}_Extended.txt"
+    new_file = out / f"{ts}_{study}_IDP_T={track_tag}_N={total_n}_Updated.txt"
     _write_tsv(new_file, header, all_rows)
     existing_file.rename(existing_file.with_suffix(".old"))
     _log(f"  Written : {new_file.name}")
@@ -812,7 +812,8 @@ def _read_existing_nums(ids_file, idp_file: Path, blocks: str,
     len_c = len(center)
     len_t = len(track_name)
     len_g = len(group)
-    pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=study_len)
+    pos_n = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=study_len,
+                        site_len=len_t)
 
     # IDS file: build idt_num → ids_num lookup (only if the file exists)
     idt_to_ids = {}
@@ -864,7 +865,7 @@ def _find_baseline_pair(study: str, sample_name: str, group: str,
     idp_matches, ids_matches = [], []
     for d in candidate_dirs:
         if d.exists():
-            for sfx in ("Baseline", "Extended"):
+            for sfx in ("First", "Updated"):
                 idp_matches += list(d.glob(f"*{study}_IDP_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
                 ids_matches += list(d.glob(f"*{study}_IDS_IDT_T={sample_name}{g_tag}_*_{sfx}.txt"))
     idp_matches.sort()
@@ -927,7 +928,7 @@ def _find_multitrack_site_file(study: str, site_name: str, track_tag: str,
     candidates = []
     for d in [search_dir, search_dir / "per_site"]:
         if d.exists():
-            for sfx in ("Baseline", "Extended"):
+            for sfx in ("First", "Updated"):
                 if track_tag:
                     candidates += list(d.glob(
                         f"*{study}_{id_type}_T={track_tag}_SITE={site_name}_*_{sfx}.txt"))
@@ -1110,7 +1111,7 @@ def generate_batch(study, center, input_file, digits, blocks, checksum_name,
             total_n, all_idp, all_ids, all_idt,
             blocks, checksum_fn, per_site_out, ts,
             shuffle=shuffle,
-            suffix="Extended" if mode == "extend" else "Baseline",
+            suffix="Updated" if mode == "extend" else "First",
         )
         _log(f"  [{sample_name} / {group_prefix}] {group_label}: {action_str}")
         if mode == "extend":
@@ -1292,13 +1293,13 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
         if mode == "extend":
             all_file_rows = e["existing_rows"] + new_rows
             total_n       = e["existing_n"] + add_n
-            suffix        = "Extended"
+            suffix        = "Updated"
             action        = f"extended {e['existing_n']} → {total_n}"
             e["existing_file"].rename(e["existing_file"].with_suffix(".old"))
         else:
             all_file_rows = new_rows
             total_n       = add_n
-            suffix        = "Baseline"
+            suffix        = "First"
             action        = f"{add_n} new"
 
         if has_tracks:
@@ -1367,7 +1368,7 @@ def generate_followups(study, visit, input_dir, output_dir):
     search_dirs = [inp, inp / "per_site"]
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
-        for sfx in ("Baseline", "Extended")
+        for sfx in ("First", "Updated")
         for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
         if "_ALL_" not in f.name
     )
@@ -1441,7 +1442,7 @@ def add_track(study, track_name, output_dir, shuffle=False):
     if shuffle:
         kinds.append(("IDS_IDT", ["IDS", "IDS128", "IDT"]))
     for kind, header in kinds:
-        f = out / f"{ts}_{study}_{kind}_T={track_name}_N=0_Baseline.txt"
+        f = out / f"{ts}_{study}_{kind}_T={track_name}_N=0_First.txt"
         _write_tsv(f, header, [])
         _log(f"  Created {f.name}")
 
@@ -1472,11 +1473,11 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         total_n  = existing_n + add_n
 
         idp_files = sorted(
-            f for sfx in ("Baseline", "Extended")
+            f for sfx in ("First", "Updated")
             for f in inp.glob(f"*{study}_IDP_IDT_*T={track_name}*_{sfx}.txt")
         )
         ids_files = sorted(
-            f for sfx in ("Baseline", "Extended")
+            f for sfx in ("First", "Updated")
             for f in inp.glob(f"*{study}_IDS_IDT_*T={track_name}*_{sfx}.txt")
         )
 
@@ -1493,7 +1494,8 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         len_c  = len(center)
         len_t  = len(track_name)
         len_g  = len(group)
-        pos_n  = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=len(study))
+        pos_n  = field_start(blocks, "N", len_c, len_t, digits, group_len=len_g, study_len=len(study),
+                             site_len=len_t)
 
         # IDS file is optional (only written when --shuffle was used originally)
         idt_to_ids_num = {}
@@ -1544,7 +1546,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             total_n,
             all_idp_nums, all_ids_nums, all_idt_nums,
             blocks, checksum_fn, out, ts,
-            shuffle=shuffle, suffix="Extended",
+            shuffle=shuffle, suffix="Updated",
         )
 
         if ids_files:
@@ -1582,7 +1584,7 @@ def create_external_ids(study, center, ext_project, digits, blocks, checksum_nam
     search_dirs = [inp, inp / "per_site"]
     baseline_files = sorted(
         f for d in search_dirs if d.exists()
-        for sfx in ("Baseline", "Extended")
+        for sfx in ("First", "Updated")
         for f in d.glob(f"*{study}_IDS_IDT_*_{sfx}.txt")
         if "_ALL_" not in f.name
     )
@@ -1717,8 +1719,8 @@ def main():
                    help="Inline counts instead of an input file. "
                         "One value when --blocks has no G (e.g. --samplesize 5000). "
                         "Two values when --blocks has G (e.g. --samplesize 50 80 for NCases NControls).")
-    p.add_argument("--track", default=None,
-                   help="Cohort/track name when using --samplesize (default: study name).")
+    p.add_argument("--site", default=None,
+                   help="Recruitment site name embedded by the R block when using --samplesize (default: study name).")
     p.add_argument("--case-prefix",    default=None,
                    help="Single-letter prefix for case IDs (loaded from study.cfg if omitted)")
     p.add_argument("--control-prefix", default=None,
@@ -1737,13 +1739,9 @@ def main():
                    help="Directory containing baseline IDS_IDT files (default: .)")
 
     # ── add-track ─────────────────────────────────────────────────────────────
-    p = sub.add_parser("add-track",
+    p = sub.add_parser("add-track", parents=[shared],
                        help="Create an empty baseline file pair for a new track")
-    p.add_argument("--study",  required=True)
     p.add_argument("--track",  required=True, help="New track name")
-    p.add_argument("--output", default=".")
-    p.add_argument("--shuffle", action="store_true",
-                   help="Also create the IDS_IDT placeholder file.")
 
     # ── extend ───────────────────────────────────────────────────────────────
     p = sub.add_parser("extend", parents=[shared],
@@ -1851,7 +1849,7 @@ def main():
             track_names = ([t.strip() for t in args.tracks.split(",")]
                            if args.tracks else [])
             if args.samplesize is not None:
-                site_name = args.track or args.study
+                site_name = args.site or args.study
                 ss = args.samplesize
                 if track_names and len(ss) != 1:
                     _log("ERROR: --tracks with --samplesize expects a single participant count.")
@@ -1873,7 +1871,7 @@ def main():
             # ── Standard batch mode: case/control per site ────────────────────
             inline_samples = None
             if args.samplesize is not None:
-                track_name = args.track or args.study
+                track_name = args.site or args.study
                 has_g = "G" in (args.blocks or "")
                 ss = args.samplesize
                 if has_g:
@@ -1902,6 +1900,8 @@ def main():
                                 args.input_dir or args.output, args.output)
 
     elif args.command == "add-track":
+        if not args.study:
+            parser.error("add-track requires --study (or a study.cfg in the output directory)")
         ok = add_track(args.study, args.track, args.output, shuffle=args.shuffle)
 
     elif args.command == "extend":

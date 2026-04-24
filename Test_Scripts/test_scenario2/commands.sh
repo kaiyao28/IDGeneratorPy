@@ -34,7 +34,7 @@ python3 idgenerator.py init \
 #   wave1.txt defines sites and participant counts:
 #     SiteA  200 cases, 0  controls  →  200 participants, no case/control split
 #     SiteB  150 cases, 75 controls  →  225 participants, case/control split
-#   Output per site: IDT | IDS_Genetics | IDS_Phenotype
+#   Output per site: IDT | IDS_Genetics
 #
 python3 idgenerator.py batch \
     --input-file test_scenario2/wave1.txt \

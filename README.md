@@ -104,17 +104,34 @@ Use this when you are recruiting participants into a new study and want to assig
 Run `init` first (see above), then:
 
 ```bash
-# All participants in one group
+# All participants in one group (no site label — study name used as site)
 python3 idgenerator.py batch --samplesize 5000 --output ./ids
 
-# Cases and controls — G in --blocks (set at init) is what adds the case/control prefix to each ID
-python3 idgenerator.py batch --samplesize 50 80 --output ./ids
+# Cases and controls at a named site — R in --blocks embeds the site name in every ID
+python3 idgenerator.py batch --samplesize 50 80 --site SiteA --output ./ids
 ```
 
 **Extend in a later wave** — pass the *additional* count; existing records are preserved automatically:
 
 ```bash
-python3 idgenerator.py batch --samplesize 10 20 --output ./ids
+# Manual: --site SiteA finds the existing file and appends
+python3 idgenerator.py batch --samplesize 10 20 --site SiteA --output ./ids
+```
+
+Manual (`--site`) and sheet input can be freely mixed across waves. The site name is the link — `--site SiteA` manually matches `SampleName SiteA` in a sheet:
+
+```bash
+# Wave 1 — manual
+python3 idgenerator.py batch --samplesize 50 80 --site SiteA --output ./ids --seed 1
+
+# Wave 2 — sheet (SampleName column must match the --site value used above)
+python3 idgenerator.py batch --input-file wave2.txt --output ./ids --seed 2
+```
+
+```
+# wave2.txt
+SampleName  NCases  NControls
+SiteA       10      20
 ```
 
 ---
@@ -134,7 +151,7 @@ python3 idgenerator.py init \
 
 `--blocks SCN` is the minimal setting for an anonymised cohort: study prefix + center + random number. No track in the ID (tracks are separate columns), no visit digit (follow-ups use a `V2_` prefix), no checksum. Add `X` if IDs will be printed on tube labels.
 
-Prepare a site sheet (`wave1.txt`):
+Prepare a site sheet — `.txt` or `.csv` recommended (no dependencies). Excel `.xlsx` also accepted but requires `pip install openpyxl`.
 
 ```
 SampleName   NCases   NControls
@@ -145,7 +162,11 @@ SiteB        150      75
 Generate IDs:
 
 ```bash
-python3 idgenerator.py batch --input-file wave1.txt --output ./ids --seed 10
+# txt or csv — no extra dependencies
+python3 idgenerator.py batch --input-file wave1.csv --output ./ids --seed 10
+
+# Excel — requires openpyxl
+python3 idgenerator.py batch --input-file wave1.xlsx --output ./ids --seed 10
 ```
 
 **Extend** with a new sheet of *additional* counts:
