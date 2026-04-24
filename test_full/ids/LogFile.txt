@@ -1,7 +1,0 @@
-2026-04-24 14:33:58: Random seed  : 42
-2026-04-24 14:33:58: ============================================================
-2026-04-24 14:33:58: Command  : batch
-2026-04-24 14:33:58: Arguments: batch --input-file test_full/wave1.txt --output test_full/ids --seed 42
-2026-04-24 14:33:58: Config   : loaded from test_full/ids/study.cfg
-2026-04-24 14:33:58: ============================================================
-2026-04-24 14:33:58: Reading sample sheet: test_full/wave1.txt
