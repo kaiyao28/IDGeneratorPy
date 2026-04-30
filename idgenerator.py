@@ -517,7 +517,10 @@ def _read_text(path: Path) -> list:
     """Read a plain-text file (csv/tsv/txt) into a list of row lists."""
     with open(path, encoding="utf-8-sig") as f:
         sample = f.read(4096)
-    dialect = csv.Sniffer().sniff(sample, delimiters="\t,;")
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters="\t,;")
+    except csv.Error:
+        dialect = csv.excel_tab  # fall back to tab-separated
     with open(path, encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f, dialect)
         return [row for row in reader if any(c.strip() for c in row)]
@@ -532,7 +535,7 @@ def _read_excel(path: Path, ext: str) -> list:
             raise ImportError(
                 "openpyxl is required to read .xlsx files.\n"
                 "Install it with:  pip install openpyxl\n"
-                "Or save your file as .txt / .txt and use that instead."
+                "Or save your file as .txt / .csv / .tsv and use that instead."
             )
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         ws = wb.active
@@ -551,7 +554,7 @@ def _read_excel(path: Path, ext: str) -> list:
             raise ImportError(
                 "xlrd is required to read .xls files.\n"
                 "Install it with:  pip install xlrd\n"
-                "Or save your file as .txt / .txt and use that instead."
+                "Or save your file as .txt / .csv / .tsv and use that instead."
             )
         wb = xlrd.open_workbook(str(path))
         ws = wb.sheet_by_index(0)
@@ -1356,7 +1359,7 @@ def _generate_batch_multitrack(study, center, samples, track_names, digits, bloc
     for f in sorted(per_site_out.glob(glob_pat)):
         site = get_param_from_filename(str(f), "SITE")
         with open(f, encoding="utf-8", newline="") as fh:
-            reader = csv.reader(fh)
+            reader = csv.reader(fh, delimiter="\t")
             next(reader)
             for cols in reader:
                 if cols:
@@ -1522,12 +1525,12 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
             _log(f"ERROR: IDP baseline for track '{track_name}' not found in {inp}")
             return False
 
-        actual_idp = count_data_lines(str(idp_files[0]))
+        actual_idp = count_data_lines(str(idp_files[-1]))
         if actual_idp != existing_n:
             _log(f"ERROR: IDP file has {actual_idp} records, declared {existing_n}")
             return False
 
-        group  = get_param_from_filename(str(idp_files[0]), "G")
+        group  = get_param_from_filename(str(idp_files[-1]), "G")
         len_c  = len(center)
         len_t  = len(track_name)
         len_g  = len(group)
@@ -1537,11 +1540,11 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         # IDS file is optional (only written when --shuffle was used originally)
         idt_to_ids_num = {}
         if ids_files:
-            actual_ids = count_data_lines(str(ids_files[0]))
+            actual_ids = count_data_lines(str(ids_files[-1]))
             if actual_ids != existing_n:
                 _log(f"ERROR: IDS file has {actual_ids} records, declared {existing_n}")
                 return False
-            with open(ids_files[0], encoding="utf-8") as f:
+            with open(ids_files[-1], encoding="utf-8") as f:
                 reader = csv.reader(f, delimiter="\t")
                 next(reader)
                 for row in reader:
@@ -1553,7 +1556,7 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
 
         idp_nums_existing = []
         idt_nums_existing = []
-        with open(idp_files[0], encoding="utf-8") as f:
+        with open(idp_files[-1], encoding="utf-8") as f:
             reader = csv.reader(f, delimiter="\t")
             next(reader)
             for row in reader:
@@ -1587,8 +1590,8 @@ def extend_baseline(study, center, tracks, new_samples, digits, blocks,
         )
 
         if ids_files:
-            ids_files[0].rename(ids_files[0].with_suffix(".old"))
-        idp_files[0].rename(idp_files[0].with_suffix(".old"))
+            ids_files[-1].rename(ids_files[-1].with_suffix(".old"))
+        idp_files[-1].rename(idp_files[-1].with_suffix(".old"))
         _log(f"  [{track_name}] extended {existing_n} → {total_n}")
         _log(f"    IDP→IDT : {idp_file.name}")
         _log(f"    IDS→IDT : {ids_file.name}")
@@ -1672,8 +1675,19 @@ def _parse_tracks(s: str) -> list:
     """Parse 'TrackA:100,TrackB:200' → [('TrackA', 100), ('TrackB', 200)]."""
     result = []
     for part in s.split(","):
-        name, count = part.strip().split(":")
-        result.append((name.strip(), int(count.strip())))
+        part = part.strip()
+        if ":" not in part:
+            raise ValueError(
+                f"Invalid track spec '{part}'. Expected format: TrackName:Count "
+                "(e.g. 'TrackA:100,TrackB:200')"
+            )
+        name, count = part.split(":", 1)
+        try:
+            result.append((name.strip(), int(count.strip())))
+        except ValueError:
+            raise ValueError(
+                f"Invalid count in track spec '{part}'. Count must be an integer."
+            )
     return result
 
 
@@ -1697,7 +1711,7 @@ def main():
     shared.add_argument("--blocks",   default=None,
                         help="Building block order, e.g. CTNVX or CTGNVX (default: CTNVX)")
     shared.add_argument("--checksum", default=None,
-                        choices=list(CHECKSUMS.keys()) + [None],
+                        choices=list(CHECKSUMS.keys()),
                         help="Checksum algorithm (default: Damm_2004)")
     shared.add_argument("--output",   default=".",
                         help="Output / study directory (default: current directory)")
@@ -1966,6 +1980,8 @@ def main():
                                  args.digits, args.blocks, args.checksum,
                                  args.input_dir or args.output, args.output)
 
+    if _log_fh:
+        _log_fh.close()
     sys.exit(0 if ok else 1)
 
 
